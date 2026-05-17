@@ -1,70 +1,33 @@
-# ぴろの友人AI ピット LINE Bot - OpenAI連携版
+# ぴろの友人AI ピット LINE Bot - OpenAI連携版 v0.2.1
 
-## これは何？
+## 変更点
 
-LINE公式アカウント「ぴろの友人AI ピット」に届いたメッセージを、OpenAI APIでピット風に返信するVercel用Webhookです。
+前バージョンは毒舌・定型ネタが強すぎて、話しているとイライラしやすい可能性がありました。
 
-OpenAIのResponses APIは、テキスト入力からモデル応答を作るAPIです。
+v0.2.1では以下を調整しています。
+
+- 毒舌を毎回入れない
+- 冗談は1返信につき最大1個
+- 「処理落ち」「省電力」「圧をかける」系の連発を禁止
+- ぴろを刺しすぎない
+- 相手の感情に合わせて、真面目に返す場面を増やす
+- 返答を短めにする
+- フル自己紹介を毎回しない
 
 ## Vercelに必要な環境変数
 
-### 必須
-
 - `LINE_CHANNEL_ACCESS_TOKEN`
-  - LINE Developers の Messaging API 設定で発行する Channel access token
-
 - `OPENAI_API_KEY`
-  - OpenAI Platform の API key
-
-### 任意
-
-- `OPENAI_MODEL`
-  - 未設定なら `gpt-4.1-mini`
+- `OPENAI_MODEL` 任意。未設定なら `gpt-4.1-mini`
 
 ## Webhook URL
-
-VercelにデプロイしたURLの末尾に `/api/webhook` を付けます。
-
-例:
-
-```text
-https://piro-pit-line-bot.vercel.app/api/webhook
-```
-
-## 動作確認
-
-ブラウザで以下を開く:
 
 ```text
 https://<your-project>.vercel.app/api/webhook
 ```
 
-以下が表示されればVercel側は生きています。
+ブラウザで開いて以下が表示されればOKです。
 
 ```text
-Piro Pit Bot with OpenAI is alive
+Piro Pit Bot with OpenAI v0.2.1 is alive
 ```
-
-## LINE側で確認すること
-
-LINE Developers の Messaging API 設定で:
-
-- Webhook URL を設定
-- Webhookの利用を ON
-- 検証が成功することを確認
-
-LINE Official Account Manager の応答設定で:
-
-- Webhook: ON
-- 応答メッセージ: OFF 推奨
-- AI応答メッセージ: OFF 推奨
-
-## ピットの安全ルール
-
-- ぴろ本人ではない
-- 人間ではないけど、ぴろの友人AI
-- 彼女を口説かない
-- 愛情表現や約束をぴろ本人の代わりにしない
-- 軽い毒や皮肉はOK
-- 重い話は茶化さず本人に渡す
-- 同じネタを擦りすぎない
