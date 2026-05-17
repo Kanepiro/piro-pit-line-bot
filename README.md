@@ -1,37 +1,70 @@
-# ぴろの友人AI ピット LINE Bot
+# ぴろの友人AI ピット LINE Bot - OpenAI連携版
 
-LINE Messaging API + Vercel 用の最小Webhookです。
-最初は固定文で返信します。
+## これは何？
 
-## ファイル構成
+LINE公式アカウント「ぴろの友人AI ピット」に届いたメッセージを、OpenAI APIでピット風に返信するVercel用Webhookです。
+
+OpenAIのResponses APIは、テキスト入力からモデル応答を作るAPIです。
+
+## Vercelに必要な環境変数
+
+### 必須
+
+- `LINE_CHANNEL_ACCESS_TOKEN`
+  - LINE Developers の Messaging API 設定で発行する Channel access token
+
+- `OPENAI_API_KEY`
+  - OpenAI Platform の API key
+
+### 任意
+
+- `OPENAI_MODEL`
+  - 未設定なら `gpt-4.1-mini`
+
+## Webhook URL
+
+VercelにデプロイしたURLの末尾に `/api/webhook` を付けます。
+
+例:
 
 ```text
-api/webhook.js
-package.json
+https://piro-pit-line-bot.vercel.app/api/webhook
 ```
 
-## Vercelに設定する環境変数
+## 動作確認
+
+ブラウザで以下を開く:
 
 ```text
-LINE_CHANNEL_ACCESS_TOKEN=LINE Developersで発行したChannel access token
+https://<your-project>.vercel.app/api/webhook
 ```
 
-## Vercelデプロイ後にLINE側へ入れるWebhook URL
+以下が表示されればVercel側は生きています。
 
 ```text
-https://あなたのVercelプロジェクト名.vercel.app/api/webhook
+Piro Pit Bot with OpenAI is alive
 ```
 
-## LINE側でやること
+## LINE側で確認すること
 
-1. LINE Developers ConsoleでChannel access tokenを発行する
-2. Vercelの環境変数に `LINE_CHANNEL_ACCESS_TOKEN` を入れる
-3. Vercelへこのプロジェクトをデプロイする
-4. LINE Official Account ManagerのMessaging API設定にWebhook URLを貼る
-5. WebhookをONにする
-6. Botにメッセージを送って固定文が返るか確認する
+LINE Developers の Messaging API 設定で:
 
-## 注意
+- Webhook URL を設定
+- Webhookの利用を ON
+- 検証が成功することを確認
 
-この最小版は接続確認用です。
-本番運用ではChannel secretを使った署名検証を追加するのがおすすめです。
+LINE Official Account Manager の応答設定で:
+
+- Webhook: ON
+- 応答メッセージ: OFF 推奨
+- AI応答メッセージ: OFF 推奨
+
+## ピットの安全ルール
+
+- ぴろ本人ではない
+- 人間ではないけど、ぴろの友人AI
+- 彼女を口説かない
+- 愛情表現や約束をぴろ本人の代わりにしない
+- 軽い毒や皮肉はOK
+- 重い話は茶化さず本人に渡す
+- 同じネタを擦りすぎない

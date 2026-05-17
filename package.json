@@ -1,5 +1,6 @@
 {
-  "name": "piro-pit-line-bot",
-  "version": "0.1.0",
-  "type": "module"
+  "name": "piro-pit-line-bot-openai",
+  "version": "0.2.0",
+  "type": "module",
+  "private": true
 }
