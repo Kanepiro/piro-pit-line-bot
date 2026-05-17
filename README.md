@@ -1,14 +1,22 @@
-# ぴろの友人AI ピット LINE Bot v0.3.1
+# ぴろの友人AI ピット LINE Bot v0.3.2
 
 ## 変更内容
 
-毒舌レベルをVercelの環境変数で調整できるようにしました。
+「ぴろに渡しとく」と言ってるのに実際は届かない問題を修正しました。
+
+この版では、ぴろ以外の人がピットにメッセージを送ると、ぴろ本人にもPush通知できます。
 
 ## 必須環境変数
 
 ```text
 LINE_CHANNEL_ACCESS_TOKEN=LINEのChannel access token
 OPENAI_API_KEY=OpenAIのAPIキー
+```
+
+## 追加環境変数
+
+```text
+PIRO_USER_ID=ぴろ本人のLINE userId
 ```
 
 ## 任意環境変数
@@ -18,26 +26,28 @@ OPENAI_MODEL=gpt-5.5
 PIT_TONE_LEVEL=3
 ```
 
-`OPENAI_MODEL` は未設定なら `gpt-5.5` です。
+## ぴろ本人のLINE userIdを調べる方法
 
-## PIT_TONE_LEVEL
-
-0〜5で指定します。
+1. このv0.3.2をVercelにデプロイ
+2. ぴろ本人のLINEからピットに以下のどれかを送る
 
 ```text
-0 = 毒なし。やさしい普通の友人AI
-1 = かなり控えめ
-2 = 軽いツッコミ
-3 = 標準ピット。おすすめ初期値
-4 = やや毒舌強め
-5 = 毒舌強め。ただし重い話では自動で弱める
+管理者登録
 ```
 
-おすすめはまず `PIT_TONE_LEVEL=3`。  
-物足りなければ `4`。  
-彼女がイラついたら `2`。
+または
+
+```text
+/myid
+```
+
+3. ピットがuserIdを返す
+4. その値をVercelの環境変数 `PIRO_USER_ID` に入れる
+5. VercelでRedeploy
 
 ## 動作確認
+
+ブラウザで以下を開きます。
 
 ```text
 https://<your-vercel-url>/api/webhook
@@ -46,11 +56,12 @@ https://<your-vercel-url>/api/webhook
 以下のように表示されればOKです。
 
 ```text
-Piro Pit Bot GPT-5.5 tone v0.3.1 is alive. PIT_TONE_LEVEL=3
+Piro Pit Bot v0.3.2 is alive. PIT_TONE_LEVEL=3. PIRO_USER_ID=set
 ```
 
-## LINE側
+`PIRO_USER_ID=not set` の場合は、ぴろへのPush通知はまだ動きません。
 
-- Webhook: ON
-- 応答メッセージ: OFF
-- AI応答メッセージ: OFF
+## 注意
+
+ぴろへのPush通知はLINEの無料メッセージ枠を消費する可能性があります。
+彼女への返信はReplyなのでカウント対象外寄りですが、ぴろへの通知はPushです。

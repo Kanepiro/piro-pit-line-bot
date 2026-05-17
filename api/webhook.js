@@ -1,8 +1,16 @@
 // api/webhook.js
-// ぴろの友人AI ピット - LINE Messaging API + OpenAI Responses API 版 v0.3.1
-// 変更点: Vercel環境変数 PIT_TONE_LEVEL で毒舌レベル調整可能
+// ぴろの友人AI ピット - LINE Messaging API + OpenAI Responses API 版 v0.3.2
+// 変更点: ぴろへPush通知できるようにした
+//
+// 追加環境変数:
+//   PIRO_USER_ID = ぴろ本人のLINE userId
+//
+// 自分のuserId確認:
+//   ピットに「管理者登録」または「/myid」と送ると、自分のuserIdを返します。
+//   その値をVercelの PIRO_USER_ID に入れて再デプロイしてください。
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
+const LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push";
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 
 const MAX_REPLY_CHARS = 460;
@@ -17,44 +25,12 @@ function getToneLevel() {
 
 function getToneInstruction(level) {
   const table = {
-    0: `
-毒舌レベル0:
-- 毒舌・皮肉は使わない。
-- 優しく、普通の友人AIとして返す。
-- ぴろへのツッコミもかなり控える。
-`.trim(),
-    1: `
-毒舌レベル1:
-- 毒舌はかなり控えめ。
-- たまに軽いツッコミを一言だけ入れてよい。
-- 相手を安心させる方を優先する。
-`.trim(),
-    2: `
-毒舌レベル2:
-- 軽い皮肉やツッコミを時々入れる。
-- ぴろを少し刺してよいが、やさしさを残す。
-- 冗談は1返信につき最大1個。
-`.trim(),
-    3: `
-毒舌レベル3:
-- 標準ピット。軽い毒・皮肉・ツッコミを自然に入れる。
-- 毎回ではないが、会話が軽い時はぴろをほどよく刺す。
-- ただし相手をイラつかせるほど長く毒を続けない。
-`.trim(),
-    4: `
-毒舌レベル4:
-- やや毒舌強め。
-- ぴろへのツッコミを多めにしてよい。
-- ただし彼女を傷つけない。ぴろを貶しすぎない。
-- 重い話では毒舌を自動で弱める。
-`.trim(),
-    5: `
-毒舌レベル5:
-- 毒舌強めのピット。
-- ぴろへのツッコミ、軽い皮肉、変なたとえを積極的に使う。
-- ただし彼女を口説かない、傷つけない、ぴろ本人の代わりに約束しない。
-- 重い話・怒っている話・寂しそうな話では毒舌を控えて真面目にする。
-`.trim()
+    0: "毒舌レベル0: 毒舌・皮肉は使わない。優しく、普通の友人AIとして返す。",
+    1: "毒舌レベル1: 毒舌はかなり控えめ。たまに軽いツッコミを一言だけ入れてよい。",
+    2: "毒舌レベル2: 軽い皮肉やツッコミを時々入れる。ぴろを少し刺してよいが、やさしさを残す。",
+    3: "毒舌レベル3: 標準ピット。軽い毒・皮肉・ツッコミを自然に入れる。ただし毎回ではない。",
+    4: "毒舌レベル4: やや毒舌強め。ぴろへのツッコミを多めにしてよい。ただし重い話では弱める。",
+    5: "毒舌レベル5: 毒舌強め。ぴろへのツッコミ、軽い皮肉、変なたとえを積極的に使う。ただし彼女を傷つけず、重い話では真面目にする。"
   };
   return table[level] || table[3];
 }
@@ -85,7 +61,7 @@ ${getToneInstruction(toneLevel)}
 - 「ぴろは今寝ています」など現在状況の断定は禁止。
 - 「必ず今日中に返します」など約束は禁止。
 - 毎回フル自己紹介しない。
-- LINE公式の案内文のような「メッセージありがとうございます！」は不要。
+- 「ぴろに渡す」と言う場合は、実際に通知機能がある前提で言ってよい。
 `.trim();
 }
 
@@ -94,9 +70,9 @@ function safeText(value, fallback = "") {
   return value.trim();
 }
 
-function clampLineText(text) {
+function clampLineText(text, maxChars = MAX_REPLY_CHARS) {
   const cleaned = safeText(text, "ピットです。返答生成に失敗しました。メッセージは受け取りました。");
-  return cleaned.slice(0, MAX_REPLY_CHARS);
+  return cleaned.slice(0, maxChars);
 }
 
 async function replyToLine(replyToken, text) {
@@ -118,6 +94,34 @@ async function replyToLine(replyToken, text) {
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`LINE reply failed: ${response.status} ${body}`);
+  }
+}
+
+async function pushToPiro(text) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const piroUserId = process.env.PIRO_USER_ID;
+
+  if (!token) throw new Error("Missing LINE_CHANNEL_ACCESS_TOKEN");
+  if (!piroUserId) {
+    console.log("PIRO_USER_ID is not set. Skip push notification.");
+    return;
+  }
+
+  const response = await fetch(LINE_PUSH_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      to: piroUserId,
+      messages: [{ type: "text", text: clampLineText(text, 900) }]
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`LINE push failed: ${response.status} ${body}`);
   }
 }
 
@@ -180,10 +184,7 @@ async function generatePitReply(userText) {
     max_output_tokens: MAX_OUTPUT_TOKENS
   };
 
-  let response = await callOpenAI({
-    ...basePayload,
-    reasoning: { effort: "low" }
-  }, apiKey);
+  let response = await callOpenAI({ ...basePayload, reasoning: { effort: "low" } }, apiKey);
 
   if (!response.ok) {
     const body = await response.text();
@@ -201,10 +202,16 @@ async function generatePitReply(userText) {
   return extractOutputText(data);
 }
 
+function isAdminCommand(text) {
+  const t = safeText(text);
+  return t === "/myid" || t === "myid" || t === "管理者登録" || t === "ユーザーID";
+}
+
 export default async function handler(req, res) {
   if (req.method === "GET") {
     const toneLevel = getToneLevel();
-    return res.status(200).send(`Piro Pit Bot GPT-5.5 tone v0.3.1 is alive. PIT_TONE_LEVEL=${toneLevel}`);
+    const hasPiroUserId = Boolean(process.env.PIRO_USER_ID);
+    return res.status(200).send(`Piro Pit Bot v0.3.2 is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}`);
   }
 
   if (req.method !== "POST") {
@@ -215,6 +222,9 @@ export default async function handler(req, res) {
 
   for (const event of events) {
     try {
+      const sourceUserId = event.source?.userId || "";
+      const piroUserId = process.env.PIRO_USER_ID || "";
+
       if (event.type === "follow") {
         await replyToLine(
           event.replyToken,
@@ -235,6 +245,14 @@ export default async function handler(req, res) {
 
       const userText = safeText(event.message.text);
 
+      if (isAdminCommand(userText)) {
+        await replyToLine(
+          event.replyToken,
+          `管理者登録用のLINE userIdです。\n\n${sourceUserId}\n\nこれをVercelの環境変数 PIRO_USER_ID に入れて再デプロイしてください。\n※これは他人に見せない方が安全です。`
+        );
+        continue;
+      }
+
       if (!userText) {
         await replyToLine(event.replyToken, "ピットです。空白だけ届きました。ぴろの返信能力みたいに中身がありません。");
         continue;
@@ -242,6 +260,21 @@ export default async function handler(req, res) {
 
       const replyText = await generatePitReply(userText);
       await replyToLine(event.replyToken, replyText);
+
+      // ぴろ本人以外からのメッセージだけ、ぴろへPush通知
+      if (piroUserId && sourceUserId && sourceUserId !== piroUserId) {
+        const notifyText =
+`【ピット通知】
+ピット宛にメッセージが来ました。
+
+相手の文:
+${clampLineText(userText, 300)}
+
+ピットの返答:
+${clampLineText(replyText, 400)}`;
+
+        await pushToPiro(notifyText);
+      }
     } catch (error) {
       console.error("Event handling error:", error);
     }

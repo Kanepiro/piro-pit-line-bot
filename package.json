@@ -1,6 +1,6 @@
 {
-  "name": "piro-pit-line-bot-gpt55-tone",
-  "version": "0.3.1",
+  "name": "piro-pit-line-bot-gpt55-tone-notify",
+  "version": "0.3.2",
   "type": "module",
   "private": true
 }
