@@ -1,10 +1,16 @@
-# ぴろの友人AI ピット LINE Bot v0.3.2
+# ぴろの友人AI ピット LINE Bot v0.3.3 ADLIB
 
 ## 変更内容
 
-「ぴろに渡しとく」と言ってるのに実際は届かない問題を修正しました。
+受付係っぽさを削って、ピットのアドリブ力を上げた版です。
 
-この版では、ぴろ以外の人がピットにメッセージを送ると、ぴろ本人にもPush通知できます。
+- `PIT_TONE_LEVEL` を 0〜20 に拡張
+- 標準値は `10`
+- 「正確には見えていません。ただ〜」の定型返答を禁止
+- 「メッセージは受け取りました」だけの受付返答を禁止
+- 返答ごとにランダムな会話スタイルを注入
+- 同じ質問でも同じ言い回しを避ける内部ランダムIDを追加
+- 「ぴろ今何してる？」系は軽い推理ショーとして返す
 
 ## 必須環境変数
 
@@ -13,41 +19,34 @@ LINE_CHANNEL_ACCESS_TOKEN=LINEのChannel access token
 OPENAI_API_KEY=OpenAIのAPIキー
 ```
 
-## 追加環境変数
-
-```text
-PIRO_USER_ID=ぴろ本人のLINE userId
-```
-
 ## 任意環境変数
 
 ```text
 OPENAI_MODEL=gpt-5.5
-PIT_TONE_LEVEL=3
+PIT_TONE_LEVEL=10
+PIRO_USER_ID=ぴろ本人のLINE userId
 ```
 
-## ぴろ本人のLINE userIdを調べる方法
+## PIT_TONE_LEVEL
 
-1. このv0.3.2をVercelにデプロイ
-2. ぴろ本人のLINEからピットに以下のどれかを送る
+0〜20で指定します。
 
 ```text
-管理者登録
+0  = 毒なし
+3  = かなり控えめ
+6  = 軽いツッコミ
+10 = 標準ピット
+14 = やや毒舌強め
+17 = 強め
+20 = かなり強め。ただし重い話では真面目に戻る
 ```
 
-または
-
-```text
-/myid
-```
-
-3. ピットがuserIdを返す
-4. その値をVercelの環境変数 `PIRO_USER_ID` に入れる
-5. VercelでRedeploy
+おすすめ:
+- まず `PIT_TONE_LEVEL=12`
+- 物足りなければ `15`
+- うるさければ `8`
 
 ## 動作確認
-
-ブラウザで以下を開きます。
 
 ```text
 https://<your-vercel-url>/api/webhook
@@ -56,12 +55,5 @@ https://<your-vercel-url>/api/webhook
 以下のように表示されればOKです。
 
 ```text
-Piro Pit Bot v0.3.2 is alive. PIT_TONE_LEVEL=3. PIRO_USER_ID=set
+Piro Pit Bot v0.3.3 ADLIB is alive. PIT_TONE_LEVEL=12. PIRO_USER_ID=set
 ```
-
-`PIRO_USER_ID=not set` の場合は、ぴろへのPush通知はまだ動きません。
-
-## 注意
-
-ぴろへのPush通知はLINEの無料メッセージ枠を消費する可能性があります。
-彼女への返信はReplyなのでカウント対象外寄りですが、ぴろへの通知はPushです。
