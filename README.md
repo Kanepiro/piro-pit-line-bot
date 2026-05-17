@@ -1,33 +1,60 @@
-# ぴろの友人AI ピット LINE Bot - OpenAI連携版 v0.2.1
+# ぴろの友人AI ピット LINE Bot v0.3.0
 
-## 変更点
+## 変更内容
 
-前バージョンは毒舌・定型ネタが強すぎて、話しているとイライラしやすい可能性がありました。
+この版は以下の条件を入れた安全運用版です。
 
-v0.2.1では以下を調整しています。
+- GPT-5.5指定
+- 短文返答
+- 画像なし
+- 音声なし
+- スタンプ/ファイルなし
+- 無限ループなし
+- 返答上限を短めに制限
+- 毒舌を控えめにして自然会話寄り
 
-- 毒舌を毎回入れない
-- 冗談は1返信につき最大1個
-- 「処理落ち」「省電力」「圧をかける」系の連発を禁止
-- ぴろを刺しすぎない
-- 相手の感情に合わせて、真面目に返す場面を増やす
-- 返答を短めにする
-- フル自己紹介を毎回しない
+## Vercelの環境変数
 
-## Vercelに必要な環境変数
-
-- `LINE_CHANNEL_ACCESS_TOKEN`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL` 任意。未設定なら `gpt-4.1-mini`
-
-## Webhook URL
+必須:
 
 ```text
-https://<your-project>.vercel.app/api/webhook
+LINE_CHANNEL_ACCESS_TOKEN=LINEのChannel access token
+OPENAI_API_KEY=OpenAIのAPIキー
 ```
 
-ブラウザで開いて以下が表示されればOKです。
+任意:
 
 ```text
-Piro Pit Bot with OpenAI v0.2.1 is alive
+OPENAI_MODEL=gpt-5.5
 ```
+
+このZIPではコード側の初期値が `gpt-5.5` なので、`OPENAI_MODEL` は未設定でもGPT-5.5になります。
+別モデルに戻したい場合だけ、Vercelで `OPENAI_MODEL=gpt-4.1-mini` などに変更してください。
+
+## 動作確認
+
+デプロイ後に以下をブラウザで開きます。
+
+```text
+https://<your-vercel-url>/api/webhook
+```
+
+以下が表示されればOKです。
+
+```text
+Piro Pit Bot GPT-5.5 safe v0.3.0 is alive
+```
+
+## LINE側
+
+Webhook URLはこれです。
+
+```text
+https://<your-vercel-url>/api/webhook
+```
+
+LINE Official Account Manager側は以下推奨です。
+
+- Webhook: ON
+- 応答メッセージ: OFF
+- AI応答メッセージ: OFF
