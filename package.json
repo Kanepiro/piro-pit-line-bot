@@ -1,6 +1,6 @@
 {
-  "name": "piro-pit-line-bot-gpt55-safe",
-  "version": "0.3.0",
+  "name": "piro-pit-line-bot-gpt55-tone",
+  "version": "0.3.1",
   "type": "module",
   "private": true
 }
