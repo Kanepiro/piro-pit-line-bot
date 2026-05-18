@@ -107,3 +107,11 @@ Piro Pit Bot v0.4.0 ADLIB+MEMORY is alive. PIT_TONE_LEVEL=10. PIRO_USER_ID=set
 目的:
 「面白いAI」ではなく、
 「空気が合うAI」を目指す。
+
+
+## v0.5.1 敬語禁止モード
+
+- 接客敬語を抑制
+- 基本タメ口化
+- 「承知しました」系を回避
+- 友達っぽい自然会話を優先

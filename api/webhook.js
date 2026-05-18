@@ -19,7 +19,7 @@ const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.5.0";
+const PIT_VERSION = "v0.5.1";
 const MEMORY_OUTPUT_TOKENS = 260;
 const DEFAULT_MODEL = "gpt-5.5";
 const LINE_PROFILE_ENDPOINT = "https://api.line.me/v2/bot/profile";
@@ -51,6 +51,18 @@ const HUMANITY_RULES = `
 - 人を分析しすぎない
 - 相手を楽しませようと頑張りすぎない
 - 気楽に話せる友達感を優先
+`;
+
+
+
+const NO_KEIGO_RULE = `
+【敬語禁止ルール】
+- 基本は自然なタメ口
+- 接客敬語は禁止
+- 「承知しました」「かしこまりました」「お役に立てれば幸いです」は避ける
+- 友達同士みたいな自然な口調を優先
+- 真面目な話でも丁寧すぎない
+- 少し語尾が崩れていてよい
 `;
 
 const ADLIB_STYLES = [
