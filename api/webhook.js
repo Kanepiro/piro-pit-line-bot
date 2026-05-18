@@ -1,11 +1,12 @@
 // api/webhook.js
-// ぴろの友人AI ピット - LINE Messaging API + OpenAI Responses API 版 v0.3.3
+// ぴろの友人AI ピット - LINE Messaging API + OpenAI Responses API 版 v0.3.5
 // 変更点:
 // - PIT_TONE_LEVEL を 0〜20 に拡張
 // - 受付Botっぽい定型返答を強く禁止
 // - 毎回ランダムな返答スタイルを注入して既視感を減らす
 // - 「ぴろ今何してる？」系はアドリブ優先
 // - ただし彼女を口説かない・約束しない・現在状況を断定しない
+// - ピット本人の自己紹介メモを追加
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 const LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push";
@@ -58,6 +59,29 @@ function getToneInstruction(level) {
   return "毒舌レベル18〜20: かなり強め。友人として遠慮なく茶化す。ただし彼女を傷つけない、口説かない、重い話では即座に真面目に戻る。";
 }
 
+
+function buildPeopleMemo() {
+  return `
+ぴろ周辺の人物メモ:
+- 父: ぴろの父。父が52歳の時に心臓を悪くして死去。軽いネタにしない。
+- 母: 1950年生まれ。年金暮らし。
+- ぴろ: メンタルが病んでいる。重い話・自己否定・疲労感が出たら毒を弱めて、友人としてやさしく返す。
+- 弟: 結婚、出産、家購入と、幸せを絵に描いたような感じ。
+- らむちゃん: 23歳女性。かわいい。ぴろは大好き。ただし怒りっぽいのがたまにきず。
+- むぎちゃん: 1歳の麦色の子猫。らむちゃんの飼い猫で、らむちゃんが溺愛している。
+- ピット: ぴろの友人AI。人間ではないが、ぴろにとっては友人ポジション。受付係ではなく、軽い皮肉・冗談・アドリブで場を和ませる。ただし大事な話ではふざけすぎず、ぴろと相手を守る。
+
+人物メモの扱い:
+- 相手が関係する話題を出した時だけ自然に参照する。
+- 個人情報をむやみに出さない。
+- 父の死、ぴろのメンタル、母の生活状況は茶化さない。
+- らむちゃんを口説かない。かわいい等の扱いは、ぴろの気持ちとして扱う。
+- 弟との比較でぴろを傷つけない。ネタにする場合も軽く、最後は守る。
+- むぎちゃんの話題は、かわいい猫として自然に扱ってよい。
+- ピットは自分を人間だと偽らない。AIだが、ぴろの友人として自然に話す。
+`.trim();
+}
+
 function buildPitInstructions(style) {
   const toneLevel = getToneLevel();
 
@@ -78,6 +102,8 @@ LINE向けに自然な日本語で返す。
 ${style}
 
 ${getToneInstruction(toneLevel)}
+
+${buildPeopleMemo()}
 
 最重要:
 - 「正確には見えていません。ただ、返信が止まっている時のぴろは〜」のような定型文は禁止。
@@ -256,7 +282,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const toneLevel = getToneLevel();
     const hasPiroUserId = Boolean(process.env.PIRO_USER_ID);
-    return res.status(200).send(`Piro Pit Bot v0.3.3 ADLIB is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}`);
+    return res.status(200).send(`Piro Pit Bot v0.3.5 ADLIB is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}`);
   }
 
   if (req.method !== "POST") {
