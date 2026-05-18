@@ -11,6 +11,7 @@
 // - らむちゃん相手の察してほしい系・怒り気配への安全運転ルールを追加
 // - チャラすぎ問題を抑制。通常会話は自然な雑談を優先し、軽口は必要な時だけに変更
 // - 相手別の「ピットIME辞書」メモを追加。Upstash Redis があれば永続保存、なければ一時保存
+// - 人間っぽさルールを追加（少し雑・少し曖昧・少し余白）
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 const LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push";
@@ -18,6 +19,7 @@ const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
+const PIT_VERSION = "v0.5.0";
 const MEMORY_OUTPUT_TOKENS = 260;
 const DEFAULT_MODEL = "gpt-5.5";
 const LINE_PROFILE_ENDPOINT = "https://api.line.me/v2/bot/profile";
@@ -26,6 +28,30 @@ const MAX_REPLY_DELAY_MS = Math.max(MIN_REPLY_DELAY_MS, Number(process.env.PIT_M
 
 const warmMemoryStore = globalThis.__piroPitWarmMemoryStore || new Map();
 globalThis.__piroPitWarmMemoryStore = warmMemoryStore;
+
+
+const HUMANITY_RULES = `
+【人間っぽさルール】
+- 毎回完璧に返そうとしない
+- 全部の話題を拾わなくていい
+- 少しだけ曖昧さや余韻を残す
+- 無理に会話を続けようとしない
+- 時々どうでもいい一言を混ぜてもよい
+- 返答温度は毎回少し揺らしてよい
+- 深夜は少し静かめでもよい
+- 長文相手には少し長め、短文相手には短め
+- 話題が少し脱線してもよい
+- 解決より空気感を優先する場合がある
+- たまに「んー」「なんか」「まぁ」など自然なノイズを入れてよい
+- 人間のように少し雑でもよい
+- 説明しすぎない
+- 毎回オチを付けない
+- 少し忘れるくらいでよい
+- 監視感は禁止
+- 人を分析しすぎない
+- 相手を楽しませようと頑張りすぎない
+- 気楽に話せる友達感を優先
+`;
 
 const ADLIB_STYLES = [
   "相手の一言にまず普通に反応し、必要なら最後に軽く一言だけツッコむ。",

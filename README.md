@@ -91,3 +91,19 @@ https://<your-vercel-url>/api/webhook
 ```text
 Piro Pit Bot v0.4.0 ADLIB+MEMORY is alive. PIT_TONE_LEVEL=10. PIRO_USER_ID=set
 ```
+
+
+## v0.5.0 人間っぽさ強化
+
+追加された思想:
+- 完璧に返しすぎない
+- 少し雑でもよい
+- 全部拾わなくてよい
+- 無理に盛り上げない
+- 少し忘れる
+- 間と余韻を大切にする
+- 会話を終わらせてもよい
+
+目的:
+「面白いAI」ではなく、
+「空気が合うAI」を目指す。
