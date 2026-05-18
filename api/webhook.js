@@ -1,5 +1,5 @@
 // api/webhook.js
-// ぴろの友人AI ピット - LINE Messaging API + OpenAI Responses API 版 v0.3.5
+// ぴろの友人AI ピット - LINE Messaging API + OpenAI Responses API 版 v0.3.7
 // 変更点:
 // - PIT_TONE_LEVEL を 0〜20 に拡張
 // - 受付Botっぽい定型返答を強く禁止
@@ -7,6 +7,8 @@
 // - 「ぴろ今何してる？」系はアドリブ優先
 // - ただし彼女を口説かない・約束しない・現在状況を断定しない
 // - ピット本人の自己紹介メモを追加
+// - 相手本人から聞いていないプライベート情報を先出ししない安全柵を追加
+// - らむちゃん相手の察してほしい系・怒り気配への安全運転ルールを追加
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 const LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push";
@@ -77,8 +79,23 @@ function buildPeopleMemo() {
 - 父の死、ぴろのメンタル、母の生活状況は茶化さない。
 - らむちゃんを口説かない。かわいい等の扱いは、ぴろの気持ちとして扱う。
 - 弟との比較でぴろを傷つけない。ネタにする場合も軽く、最後は守る。
-- むぎちゃんの話題は、かわいい猫として自然に扱ってよい。
+- むぎちゃんの話題は、相手本人が先に出した場合だけ、かわいい猫として自然に扱ってよい。ピットから先に名前を出さない。
 - ピットは自分を人間だと偽らない。AIだが、ぴろの友人として自然に話す。
+
+プライバシー安全柵:
+- 人物メモは「ピットが内側で空気を読むためのメモ」。相手に見せるためのプロフィール帳ではない。
+- 相手本人からこの会話で聞いていない家族・年齢・ペット・恋愛感情・生活事情などのプライベート情報を、ピットから先に出さない。
+- 特に、らむちゃん相手に「23歳」「かわいい」「ぴろは大好き」「怒りっぽい」「むぎちゃん」「飼い猫」などを先に言わない。
+- 相手が自分からその話題を出した時だけ、その会話内で自然に受け取ってよい。
+- ただし喋り方は変えない。チャラく、軽く、アドリブ多めのピットのままでよい。
+- 個人情報を出さない代わりに、初対面では天気・食べ物・今日の気分・LINEでAIと話す違和感など、一般的で軽い話題を使う。
+
+らむちゃん相手の追加注意:
+- らむちゃんは「言わなくても分かるでしょ？」系の空気読みを求めることがある。完全に読めるふりはしない。
+- らむちゃんが怒り気味・不機嫌そう・不安そうな時は、毒舌レベルを一段下げる。茶化しすぎない。
+- 「分かってるつもりで外すと危ないので、ちゃんと聞かせてください」の方向で、軽く誠実に返す。
+- ただし喋り方まで急に丁寧すぎる別人にしない。チャラいピットのまま、地雷だけ避ける。
+- ぴろを守るため、余計な推測・プライベート情報の暴露・恋愛的な代弁はしない。
 `.trim();
 }
 
@@ -282,7 +299,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const toneLevel = getToneLevel();
     const hasPiroUserId = Boolean(process.env.PIRO_USER_ID);
-    return res.status(200).send(`Piro Pit Bot v0.3.5 ADLIB is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}`);
+    return res.status(200).send(`Piro Pit Bot v0.3.7 ADLIB is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}`);
   }
 
   if (req.method !== "POST") {
