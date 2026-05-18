@@ -1,5 +1,5 @@
 // api/webhook.js
-// ぴろの友人AI ピット - LINE Messaging API + OpenAI Responses API 版 v0.3.8
+// ぴろの友人AI ピット - LINE Messaging API + OpenAI Responses API 版 v0.4.0
 // 変更点:
 // - PIT_TONE_LEVEL を 0〜20 に拡張
 // - 受付Botっぽい定型返答を強く禁止
@@ -10,6 +10,7 @@
 // - 相手本人から聞いていないプライベート情報を先出ししない安全柵を追加
 // - らむちゃん相手の察してほしい系・怒り気配への安全運転ルールを追加
 // - チャラすぎ問題を抑制。通常会話は自然な雑談を優先し、軽口は必要な時だけに変更
+// - 相手別の「ピットIME辞書」メモを追加。Upstash Redis があれば永続保存、なければ一時保存
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 const LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push";
@@ -17,7 +18,14 @@ const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
+const MEMORY_OUTPUT_TOKENS = 260;
 const DEFAULT_MODEL = "gpt-5.5";
+const LINE_PROFILE_ENDPOINT = "https://api.line.me/v2/bot/profile";
+const MIN_REPLY_DELAY_MS = Math.max(0, Number(process.env.PIT_MIN_REPLY_DELAY_MS ?? "1200") || 0);
+const MAX_REPLY_DELAY_MS = Math.max(MIN_REPLY_DELAY_MS, Number(process.env.PIT_MAX_REPLY_DELAY_MS ?? "2600") || MIN_REPLY_DELAY_MS);
+
+const warmMemoryStore = globalThis.__piroPitWarmMemoryStore || new Map();
+globalThis.__piroPitWarmMemoryStore = warmMemoryStore;
 
 const ADLIB_STYLES = [
   "相手の一言にまず普通に反応し、必要なら最後に軽く一言だけツッコむ。",
@@ -50,6 +58,182 @@ function getToneInstruction(level) {
   if (level <= 14) return "毒舌レベル11〜14: やや軽口あり。ただしチャラさは控えめ。相手の話にちゃんと返すことを最優先。";
   if (level <= 17) return "毒舌レベル15〜17: 強め設定だが、常時チャラくしない。刺すのはぴろだけ、しかも一言まで。相手には普通に会話する。";
   return "毒舌レベル18〜20: かなり強め。ただし大喜利・比喩・茶化しは連発しない。彼女を傷つけない、口説かない、重い話では即座に真面目に戻る。";
+}
+
+
+function sleep(ms) {
+  if (!ms) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function randomReplyDelayMs() {
+  if (MAX_REPLY_DELAY_MS <= 0) return 0;
+  if (MAX_REPLY_DELAY_MS === MIN_REPLY_DELAY_MS) return MIN_REPLY_DELAY_MS;
+  return Math.floor(MIN_REPLY_DELAY_MS + Math.random() * (MAX_REPLY_DELAY_MS - MIN_REPLY_DELAY_MS));
+}
+
+function memoryKey(userId) {
+  return `pit:memory:${userId}`;
+}
+
+function hasRedisMemory() {
+  return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
+async function redisCommand(command) {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+
+  const response = await fetch(`${url.replace(/\/$/, "")}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify(command)
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Redis command failed: ${response.status} ${body}`);
+  }
+
+  return response.json();
+}
+
+async function loadPersonMemory(userId) {
+  if (!userId) return "";
+
+  try {
+    if (hasRedisMemory()) {
+      const data = await redisCommand(["GET", memoryKey(userId)]);
+      if (typeof data?.result === "string") return data.result.slice(0, 2200);
+    }
+  } catch (error) {
+    console.error("Load Redis memory error:", error);
+  }
+
+  return (warmMemoryStore.get(userId) || "").slice(0, 2200);
+}
+
+async function savePersonMemory(userId, memory) {
+  if (!userId || !memory) return;
+  const compact = clampLineText(memory, 2200);
+  warmMemoryStore.set(userId, compact);
+
+  try {
+    if (hasRedisMemory()) {
+      // 90日アクセスがなければ自然に消える。忘れる余地を残すためのTTL。
+      await redisCommand(["SET", memoryKey(userId), compact, "EX", 60 * 60 * 24 * 90]);
+    }
+  } catch (error) {
+    console.error("Save Redis memory error:", error);
+  }
+}
+
+async function deletePersonMemory(userId) {
+  if (!userId) return;
+  warmMemoryStore.delete(userId);
+
+  try {
+    if (hasRedisMemory()) {
+      await redisCommand(["DEL", memoryKey(userId)]);
+    }
+  } catch (error) {
+    console.error("Delete Redis memory error:", error);
+  }
+}
+
+function isForgetMemoryCommand(text) {
+  const t = safeText(text);
+  return t === "/forget" || t === "忘れて" || t === "記憶消して" || t === "メモ消して" || t === "ピットIME辞書消して";
+}
+
+async function fetchLineProfile(userId) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token || !userId) return null;
+
+  try {
+    const response = await fetch(`${LINE_PROFILE_ENDPOINT}/${encodeURIComponent(userId)}`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    if (!response.ok) return null;
+    return response.json();
+  } catch (error) {
+    console.error("LINE profile fetch error:", error);
+    return null;
+  }
+}
+
+function buildPersonMemoryInstruction(memory, profile) {
+  const displayName = safeText(profile?.displayName);
+  const memoryText = safeText(memory);
+
+  return `
+相手別ピットIME辞書:
+- 今話している相手のLINE表示名: ${displayName || "不明"}
+- このメモは会話を自然にするための薄い辞書。監視記録ではない。
+- メモをそのまま読み上げない。「覚えてます」感を出しすぎない。
+- 相手本人が話題にした時だけ、前回の流れ・好み・話し方を自然に拾う。
+- 時刻・日付・細かい発言ログを根拠にした言い方は禁止。「昨日23:41に〜」のような表現は禁止。
+- 保存済みメモ:
+${memoryText || "まだ十分な相手別メモはない。今回の会話から無理なく学ぶ。"}
+`.trim();
+}
+
+async function updatePersonMemory({ userId, profile, oldMemory, userText, replyText }) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
+  if (!apiKey || !userId) return;
+
+  const displayName = safeText(profile?.displayName, "不明");
+  const prompt = `
+あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。
+会話ログ全文ではなく、次回の会話を自然にするための短いメモだけを残す。
+
+保存してよい:
+- 会話スタイルの好み、反応がよかったノリ、短文/長文傾向
+- 本人が自分から明かした軽い好み、よく話す話題、前回の話題
+- 次回拾うと自然な未完了トピック
+
+保存しない/削る:
+- 住所、電話、メール、詳細な勤務先、金銭、健康、恋愛、家族事情などセンシティブ情報
+- 他人の個人情報
+- 正確な時刻や監視感のある記録
+- 相手が「忘れて」と言った内容
+
+形式は日本語の箇条書き。最大8項目。淡く、短く、実用的に。
+
+LINE表示名: ${displayName}
+既存メモ:
+${oldMemory || "なし"}
+
+今回の相手発言:
+${userText}
+
+今回のピット返答:
+${replyText}
+`.trim();
+
+  try {
+    const response = await callOpenAI({
+      model,
+      instructions: "個人情報を増やしすぎず、雑談の自然さに必要な相手別IME辞書だけを更新してください。出力はメモ本文のみ。",
+      input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+      max_output_tokens: MEMORY_OUTPUT_TOKENS
+    }, apiKey);
+
+    if (!response.ok) {
+      console.error("Memory update error:", response.status, await response.text());
+      return;
+    }
+    const data = await response.json();
+    const newMemory = extractOutputText(data);
+    if (newMemory) await savePersonMemory(userId, newMemory);
+  } catch (error) {
+    console.error("Memory update exception:", error);
+  }
 }
 
 
@@ -90,7 +274,7 @@ function buildPeopleMemo() {
 `.trim();
 }
 
-function buildPitInstructions(style) {
+function buildPitInstructions(style, personMemoryInstruction = "") {
   const toneLevel = getToneLevel();
 
   return `
@@ -113,6 +297,8 @@ ${style}
 ${getToneInstruction(toneLevel)}
 
 ${buildPeopleMemo()}
+
+${personMemoryInstruction}
 
 最重要:
 - 「正確には見えていません。ただ、返信が止まっている時のぴろは〜」のような定型文は禁止。
@@ -230,11 +416,12 @@ async function callOpenAI(payload, apiKey) {
   });
 }
 
-async function generatePitReply(userText) {
+async function generatePitReply(userText, personMemoryInstruction = "") {
+  await sleep(randomReplyDelayMs());
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const style = pickStyle();
-  const instructions = buildPitInstructions(style);
+  const instructions = buildPitInstructions(style, personMemoryInstruction);
 
   if (!apiKey) {
     return "ピットです。OpenAI APIキーが未設定なので、まだ看板だけの友人AIです。ぴろに設定の続きをやらせてください。";
@@ -292,7 +479,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const toneLevel = getToneLevel();
     const hasPiroUserId = Boolean(process.env.PIRO_USER_ID);
-    return res.status(200).send(`Piro Pit Bot v0.3.8 ADLIB is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}`);
+    return res.status(200).send(`Piro Pit Bot v0.4.0 ADLIB+MEMORY is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}`);
   }
 
   if (req.method !== "POST") {
@@ -339,8 +526,26 @@ export default async function handler(req, res) {
         continue;
       }
 
-      const replyText = await generatePitReply(userText);
+      if (isForgetMemoryCommand(userText)) {
+        await deletePersonMemory(sourceUserId);
+        await replyToLine(event.replyToken, "了解。この相手用のピットIME辞書は消しました。ここからまた、まっさら寄りで話します。");
+        continue;
+      }
+
+      const profile = await fetchLineProfile(sourceUserId);
+      const personMemory = await loadPersonMemory(sourceUserId);
+      const personMemoryInstruction = buildPersonMemoryInstruction(personMemory, profile);
+
+      const replyText = await generatePitReply(userText, personMemoryInstruction);
       await replyToLine(event.replyToken, replyText);
+
+      await updatePersonMemory({
+        userId: sourceUserId,
+        profile,
+        oldMemory: personMemory,
+        userText,
+        replyText
+      });
 
       if (piroUserId && sourceUserId && sourceUserId !== piroUserId) {
         const notifyText =
