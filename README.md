@@ -115,3 +115,62 @@ Piro Pit Bot v0.4.0 ADLIB+MEMORY is alive. PIT_TONE_LEVEL=10. PIRO_USER_ID=set
 - 基本タメ口化
 - 「承知しました」系を回避
 - 友達っぽい自然会話を優先
+
+
+## v0.6.0 Supabase記憶倉庫
+
+追加内容:
+
+```text
+- Supabaseへ全テキスト会話ログを保存
+- Supabaseへ相手別ピットIME辞書を保存
+- 直近会話ログを次回プロンプトへ短く注入
+- ぴろへの会話内容転送は削除したまま
+```
+
+### 追加環境変数
+
+Vercel に以下を追加してください。
+
+```text
+SUPABASE_URL=SupabaseのProject URL
+SUPABASE_SERVICE_ROLE_KEY=Supabaseのservice_role key
+```
+
+注意:
+
+```text
+service_role key は管理者鍵です。
+スクショで見せない。
+GitHubへ入れない。
+ブラウザ側コードへ出さない。
+VercelのEnvironment Variablesにだけ入れる。
+```
+
+### Supabase側の準備
+
+Supabase Dashboard の SQL Editor で、同梱の `supabase_schema.sql` を実行してください。
+
+作成されるテーブル:
+
+```text
+line_users
+line_messages
+person_memories
+```
+
+### 動作確認
+
+デプロイ後に以下へアクセス:
+
+```text
+https://<your-vercel-url>/api/webhook
+```
+
+以下のように `SUPABASE=set` が出れば、環境変数は読めています。
+
+```text
+Piro Pit Bot v0.6.0-supabase-privacy is alive. PIT_TONE_LEVEL=10. PIRO_USER_ID=set. SUPABASE=set
+```
+
+その後、LINEで1通送ると `line_messages` に user/assistant の2行が保存されます。

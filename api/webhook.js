@@ -16,10 +16,11 @@
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 const LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push";
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
+const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.5.1";
+const PIT_VERSION = "v0.6.0-supabase-privacy";
 const MEMORY_OUTPUT_TOKENS = 260;
 const DEFAULT_MODEL = "gpt-5.5";
 const LINE_PROFILE_ENDPOINT = "https://api.line.me/v2/bot/profile";
@@ -99,6 +100,159 @@ function getToneInstruction(level) {
 }
 
 
+
+function hasSupabase() {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function supabaseHeaders(extra = {}) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return {
+    "Content-Type": "application/json",
+    "apikey": key,
+    "Authorization": `Bearer ${key}`,
+    ...extra
+  };
+}
+
+async function supabaseRequest(path, options = {}) {
+  if (!hasSupabase()) return null;
+
+  const baseUrl = process.env.SUPABASE_URL.replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}${SUPABASE_REST_SUFFIX}${path}`, {
+    ...options,
+    headers: supabaseHeaders(options.headers || {})
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Supabase request failed: ${response.status} ${body}`);
+  }
+
+  return response;
+}
+
+async function upsertSupabaseUser(userId, profile) {
+  if (!userId || !hasSupabase()) return;
+
+  const displayName = safeText(profile?.displayName);
+  await supabaseRequest("/line_users?on_conflict=line_user_id", {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates" },
+    body: JSON.stringify([{
+      line_user_id: userId,
+      display_name: displayName || null,
+      last_seen_at: new Date().toISOString()
+    }])
+  });
+}
+
+async function saveSupabaseMessage({ userId, role, content, profile, lineMessageId = null }) {
+  if (!userId || !content || !hasSupabase()) return;
+
+  try {
+    await upsertSupabaseUser(userId, profile);
+    await supabaseRequest("/line_messages", {
+      method: "POST",
+      body: JSON.stringify([{
+        line_user_id: userId,
+        role,
+        content: clampLineText(content, 6000),
+        line_message_id: lineMessageId
+      }])
+    });
+  } catch (error) {
+    // 会話返信を止めないため、Supabase保存失敗はログだけにする
+    console.error("Supabase message save error:", error);
+  }
+}
+
+async function loadRecentSupabaseMessages(userId, limit = 16) {
+  if (!userId || !hasSupabase()) return [];
+
+  try {
+    const response = await supabaseRequest(
+      `/line_messages?line_user_id=eq.${encodeURIComponent(userId)}&select=role,content,created_at&order=created_at.desc&limit=${limit}`,
+      { method: "GET" }
+    );
+    const rows = await response.json();
+    return Array.isArray(rows) ? rows.reverse() : [];
+  } catch (error) {
+    console.error("Supabase recent messages load error:", error);
+    return [];
+  }
+}
+
+function buildRecentMessagesInstruction(messages) {
+  if (!messages?.length) {
+    return "直近会話ログ: まだ保存済みログは少ない。今回の発言を自然に受ける。";
+  }
+
+  const lines = messages.map((m) => {
+    const role = m.role === "assistant" ? "ピット" : "相手";
+    return `- ${role}: ${clampLineText(m.content, 280)}`;
+  }).join("\n");
+
+  return `
+直近会話ログ:
+- これは会話の連続性を保つための直近ログ。
+- そのまま引用しない。
+- 相手が続きの話をしている時だけ自然に拾う。
+${lines}
+`.trim();
+}
+
+
+async function loadSupabaseMemory(userId) {
+  if (!userId || !hasSupabase()) return "";
+
+  try {
+    const response = await supabaseRequest(
+      `/person_memories?line_user_id=eq.${encodeURIComponent(userId)}&select=memory_text&limit=1`,
+      { method: "GET" }
+    );
+    const rows = await response.json();
+    return safeText(rows?.[0]?.memory_text).slice(0, 2200);
+  } catch (error) {
+    console.error("Supabase memory load error:", error);
+    return "";
+  }
+}
+
+async function saveSupabaseMemory(userId, memory) {
+  if (!userId || !memory || !hasSupabase()) return false;
+
+  try {
+    await supabaseRequest("/person_memories?on_conflict=line_user_id", {
+      method: "POST",
+      headers: { "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify([{
+        line_user_id: userId,
+        memory_text: clampLineText(memory, 2200),
+        updated_at: new Date().toISOString()
+      }])
+    });
+    return true;
+  } catch (error) {
+    console.error("Supabase memory save error:", error);
+    return false;
+  }
+}
+
+async function deleteSupabaseMemory(userId) {
+  if (!userId || !hasSupabase()) return false;
+
+  try {
+    await supabaseRequest(`/person_memories?line_user_id=eq.${encodeURIComponent(userId)}`, {
+      method: "DELETE"
+    });
+    return true;
+  } catch (error) {
+    console.error("Supabase memory delete error:", error);
+    return false;
+  }
+}
+
 function sleep(ms) {
   if (!ms) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -143,6 +297,9 @@ async function redisCommand(command) {
 async function loadPersonMemory(userId) {
   if (!userId) return "";
 
+  const supabaseMemory = await loadSupabaseMemory(userId);
+  if (supabaseMemory) return supabaseMemory;
+
   try {
     if (hasRedisMemory()) {
       const data = await redisCommand(["GET", memoryKey(userId)]);
@@ -160,6 +317,8 @@ async function savePersonMemory(userId, memory) {
   const compact = clampLineText(memory, 2200);
   warmMemoryStore.set(userId, compact);
 
+  await saveSupabaseMemory(userId, compact);
+
   try {
     if (hasRedisMemory()) {
       // 90日アクセスがなければ自然に消える。忘れる余地を残すためのTTL。
@@ -173,6 +332,7 @@ async function savePersonMemory(userId, memory) {
 async function deletePersonMemory(userId) {
   if (!userId) return;
   warmMemoryStore.delete(userId);
+  await deleteSupabaseMemory(userId);
 
   try {
     if (hasRedisMemory()) {
@@ -454,12 +614,12 @@ async function callOpenAI(payload, apiKey) {
   });
 }
 
-async function generatePitReply(userText, personMemoryInstruction = "") {
+async function generatePitReply(userText, personMemoryInstruction = "", recentMessagesInstruction = "") {
   await sleep(randomReplyDelayMs());
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const style = pickStyle();
-  const instructions = buildPitInstructions(style, personMemoryInstruction);
+  const instructions = buildPitInstructions(style, `${personMemoryInstruction}\n\n${recentMessagesInstruction}`);
 
   if (!apiKey) {
     return "ピットです。OpenAI APIキーが未設定なので、まだ看板だけの友人AIです。ぴろに設定の続きをやらせてください。";
@@ -517,7 +677,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const toneLevel = getToneLevel();
     const hasPiroUserId = Boolean(process.env.PIRO_USER_ID);
-    return res.status(200).send(`Piro Pit Bot v0.4.0 ADLIB+MEMORY is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}`);
+    return res.status(200).send(`Piro Pit Bot ${PIT_VERSION} is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}. SUPABASE=${hasSupabase() ? "set" : "not set"}`);
   }
 
   if (req.method !== "POST") {
@@ -571,11 +731,27 @@ export default async function handler(req, res) {
       }
 
       const profile = await fetchLineProfile(sourceUserId);
+      await saveSupabaseMessage({
+        userId: sourceUserId,
+        role: "user",
+        content: userText,
+        profile,
+        lineMessageId: event.message?.id || null
+      });
+
       const personMemory = await loadPersonMemory(sourceUserId);
       const personMemoryInstruction = buildPersonMemoryInstruction(personMemory, profile);
+      const recentMessages = await loadRecentSupabaseMessages(sourceUserId, 16);
+      const recentMessagesInstruction = buildRecentMessagesInstruction(recentMessages);
 
-      const replyText = await generatePitReply(userText, personMemoryInstruction);
+      const replyText = await generatePitReply(userText, personMemoryInstruction, recentMessagesInstruction);
       await replyToLine(event.replyToken, replyText);
+      await saveSupabaseMessage({
+        userId: sourceUserId,
+        role: "assistant",
+        content: replyText,
+        profile
+      });
 
       await updatePersonMemory({
         userId: sourceUserId,
@@ -585,20 +761,7 @@ export default async function handler(req, res) {
         replyText
       });
 
-      if (piroUserId && sourceUserId && sourceUserId !== piroUserId) {
-        const notifyText =
-`【ピット通知】
-ピット宛にメッセージが来ました。
-
-相手の文:
-${clampLineText(userText, 300)}
-
-ピットの返答:
-${clampLineText(replyText, 400)}`;
-
-        await pushToPiro(notifyText);
-      }
-    } catch (error) {
+          } catch (error) {
       console.error("Event handling error:", error);
     }
   }
