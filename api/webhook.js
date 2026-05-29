@@ -20,7 +20,7 @@ const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.8.0-auto-memory-supabase-privacy";
+const PIT_VERSION = "v0.8.1-memory-classified-supabase-privacy";
 const MEMORY_OUTPUT_TOKENS = 260;
 const MEMORY_UPDATE_ENABLED = (process.env.PIT_MEMORY_UPDATE_ENABLED ?? "true") !== "false";
 const MIN_MEMORY_UPDATE_CHARS = Math.max(0, Number(process.env.PIT_MIN_MEMORY_UPDATE_CHARS ?? "8") || 8);
@@ -285,7 +285,7 @@ async function loadSupabaseMemory(userId) {
       { method: "GET" }
     );
     const rows = await response.json();
-    return safeText(rows?.[0]?.memory_text).slice(0, 2200);
+    return safeText(rows?.[0]?.memory_text).slice(0, 3200);
   } catch (error) {
     console.error("Supabase memory load error:", error);
     return "";
@@ -301,7 +301,7 @@ async function saveSupabaseMemory(userId, memory) {
       headers: { "Prefer": "resolution=merge-duplicates" },
       body: JSON.stringify([{
         line_user_id: userId,
-        memory_text: clampLineText(memory, 2200),
+        memory_text: clampLineText(memory, 3200),
         updated_at: new Date().toISOString()
       }])
     });
@@ -382,12 +382,12 @@ async function loadPersonMemory(userId) {
     console.error("Load Redis memory error:", error);
   }
 
-  return (warmMemoryStore.get(userId) || "").slice(0, 2200);
+  return (warmMemoryStore.get(userId) || "").slice(0, 3200);
 }
 
 async function savePersonMemory(userId, memory) {
   if (!userId || !memory) return;
-  const compact = clampLineText(memory, 2200);
+  const compact = clampLineText(memory, 3200);
   warmMemoryStore.set(userId, compact);
 
   await saveSupabaseMemory(userId, compact);
@@ -484,21 +484,43 @@ async function updatePersonMemory({ userId, profile, oldMemory, userText, replyT
 
   const displayName = safeText(profile?.displayName, "不明");
   const prompt = `
-あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。v0.8.0では「個人情報」ではなく「会話を自然にする手がかり」だけを残す。
-会話ログ全文ではなく、次回の会話を自然にするための短いメモだけを残す。
+あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。
+目的は、次回以降の会話を自然にすること。個人情報の収集ではない。
+
+v0.8.1では、メモを必ず以下の4分類で整理する。
+既存メモを丸ごと追記せず、重複・古い内容・矛盾を整理して「最新版の辞書」として出力する。
+
+【出力形式】
+# fact
+- 本人が自分から話した軽い好み・傾向・よく出る話題だけ。最大5項目。
+# style
+- どう話すと会話が続きやすいか。ノリ、距離感、反応がよかった返し。最大5項目。
+# open_topics
+- 次回自然に拾える未完了の話題。なければ「なし」。最大3項目。
+# avoid
+- 避けた方がよい返し、地雷、強すぎる励まし等。なければ「なし」。最大3項目。
 
 保存してよい:
 - 会話スタイルの好み、反応がよかったノリ、短文/長文傾向
 - 本人が自分から明かした軽い好み、よく話す話題、前回の話題
 - 次回拾うと自然な未完了トピック
+- 「こう返すと自然」という会話運用メモ
 
 保存しない/削る:
-- 住所、電話、メール、詳細な勤務先、金銭、健康、恋愛、家族事情などセンシティブ情報
+- 住所、電話、メール、詳細な勤務先、金銭、病気の診断、恋愛、家族事情などセンシティブ情報
 - 他人の個人情報
 - 正確な時刻や監視感のある記録
 - 相手が「忘れて」と言った内容
+- 1回だけの軽い冗談を、永続的な性格として断定すること
+- ピット側の発言だけを根拠にした思い込み
 
-形式は日本語の箇条書き。最大8項目。淡く、短く、実用的に。
+重要:
+- 出力はメモ本文のみ。
+- 最大で全体12項目程度。
+- 各項目は短く、実用的に。
+- 「〜そう」「〜傾向」など断定しすぎない表現を優先。
+- 既存メモと今回の会話が矛盾する場合は、今回の本人発言を優先し、古い推測は削る。
+- 会話ログ全文や分析レポートにしない。
 
 LINE表示名: ${displayName}
 既存メモ:
@@ -514,7 +536,7 @@ ${replyText}
   try {
     const response = await callOpenAI({
       model,
-      instructions: "個人情報を増やしすぎず、雑談の自然さに必要な相手別IME辞書だけを更新してください。出力はメモ本文のみ。",
+      instructions: "相手別IME辞書を4分類で整理して更新してください。丸ごと追記せず、重複・古い推測・不要な個人情報を削り、出力はメモ本文のみ。",
       input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
       max_output_tokens: MEMORY_OUTPUT_TOKENS
     }, apiKey);
@@ -869,4 +891,4 @@ export default async function handler(req, res) {
 }
 
 
-// v0.8.0: automatic person memory update is enabled with a lightweight guard to avoid updating on every trivial message. Vector search is still a later step.
+// v0.8.1: person memory is now categorized into fact/style/open_topics/avoid. Vector search is still a later step.
