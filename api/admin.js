@@ -1,13 +1,114 @@
-const PIT_VERSION = "v0.8.7-status-redirect-fix-supabase-privacy";
+import { createClient } from "@supabase/supabase-js";
+
+const PIT_VERSION = "v0.8.8-admin-save-settings-supabase-privacy";
 
 function envStatus(value) {
   return value ? "設定済み" : "未設定";
 }
 
-export default async function handler(req, res) {
+function jsonResponse(res, status, payload) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(payload));
+}
+
+function getSupabase() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+const defaultSettings = {
+  preset: "pit_default",
+  kindness: 80,
+  humor: 70,
+  tsukkomi: 55,
+  dry: 20,
+  analysis: 45,
+  use_recent_topics: true,
+  avoid_unun_ai: true,
+  move_conversation_forward: true,
+  search_when_unsure: true,
+  host_mode: false,
+  consultation_mode: false,
+  custom_memo: "相手を口説かない。\nでも、あり得ないほど気遣いができる。\n共感だけで終わらず、軽いツッコミや質問で会話を前に進める。\n全てを覚えていても、全ては言わない。"
+};
+
+function mergeSettings(settings) {
+  return { ...defaultSettings, ...(settings || {}) };
+}
+
+function numberInRange(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function sanitizeSettings(input) {
+  const base = mergeSettings(input || {});
+  return {
+    preset: String(base.preset || "pit_default").slice(0, 40),
+    kindness: numberInRange(base.kindness, 80),
+    humor: numberInRange(base.humor, 70),
+    tsukkomi: numberInRange(base.tsukkomi, 55),
+    dry: numberInRange(base.dry, 20),
+    analysis: numberInRange(base.analysis, 45),
+    use_recent_topics: Boolean(base.use_recent_topics),
+    avoid_unun_ai: Boolean(base.avoid_unun_ai),
+    move_conversation_forward: Boolean(base.move_conversation_forward),
+    search_when_unsure: Boolean(base.search_when_unsure),
+    host_mode: Boolean(base.host_mode),
+    consultation_mode: Boolean(base.consultation_mode),
+    custom_memo: String(base.custom_memo || "").slice(0, 2000)
+  };
+}
+
+async function loadSettings() {
+  const supabase = getSupabase();
+  if (!supabase) return { settings: defaultSettings, source: "default_no_supabase" };
+
+  const { data, error } = await supabase
+    .from("personality_settings")
+    .select("settings")
+    .eq("id", "default")
+    .single();
+
+  if (error || !data?.settings) {
+    return { settings: defaultSettings, source: "default_missing_row" };
+  }
+  return { settings: mergeSettings(data.settings), source: "supabase" };
+}
+
+async function saveSettings(settings) {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase env vars are not set");
+
+  const clean = sanitizeSettings(settings);
+  const { error } = await supabase
+    .from("personality_settings")
+    .upsert({
+      id: "default",
+      settings: clean,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "id" });
+
+  if (error) throw error;
+  return clean;
+}
+
+function checked(value) {
+  return value ? "checked" : "";
+}
+
+function selected(value, expected) {
+  return value === expected ? "checked" : "";
+}
+
+function htmlPage(settings, source) {
   const memoryUpdateEnabled = process.env.PIT_MEMORY_UPDATE_ENABLED !== "false";
 
-  const html = `<!doctype html>
+  return `<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
@@ -23,7 +124,7 @@ export default async function handler(req, res) {
       --line: #e5e7eb;
       --accent: #111827;
       --ok: #16a34a;
-      --warn: #ca8a04;
+      --danger: #dc2626;
     }
     * { box-sizing: border-box; }
     body {
@@ -33,10 +134,7 @@ export default async function handler(req, res) {
       background: var(--bg);
       color: var(--text);
     }
-    main {
-      max-width: 980px;
-      margin: 0 auto;
-    }
+    main { max-width: 980px; margin: 0 auto; }
     header {
       display: flex;
       justify-content: space-between;
@@ -44,16 +142,8 @@ export default async function handler(req, res) {
       align-items: flex-start;
       margin-bottom: 20px;
     }
-    h1 {
-      margin: 0;
-      font-size: 28px;
-      letter-spacing: .02em;
-    }
-    .subtitle {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 14px;
-    }
+    h1 { margin: 0; font-size: 28px; letter-spacing: .02em; }
+    .subtitle { margin-top: 6px; color: var(--muted); font-size: 14px; }
     .version {
       background: var(--accent);
       color: #fff;
@@ -74,10 +164,7 @@ export default async function handler(req, res) {
       padding: 20px;
       box-shadow: 0 8px 28px rgba(0,0,0,.05);
     }
-    .card h2 {
-      margin: 0 0 14px;
-      font-size: 18px;
-    }
+    .card h2 { margin: 0 0 14px; font-size: 18px; }
     dl {
       display: grid;
       grid-template-columns: 180px 1fr;
@@ -104,9 +191,7 @@ export default async function handler(req, res) {
       background: var(--ok);
       display: inline-block;
     }
-    .control {
-      margin: 14px 0;
-    }
+    .control { margin: 14px 0; }
     .control label {
       display: flex;
       justify-content: space-between;
@@ -114,13 +199,8 @@ export default async function handler(req, res) {
       font-weight: 650;
       margin-bottom: 8px;
     }
-    .control small {
-      color: var(--muted);
-      font-weight: 500;
-    }
-    input[type="range"] {
-      width: 100%;
-    }
+    .control small { color: var(--muted); font-weight: 500; }
+    input[type="range"] { width: 100%; }
     textarea {
       width: 100%;
       min-height: 150px;
@@ -131,10 +211,7 @@ export default async function handler(req, res) {
       font: inherit;
       line-height: 1.6;
     }
-    .checks {
-      display: grid;
-      gap: 10px;
-    }
+    .checks { display: grid; gap: 10px; }
     .checks label {
       display: flex;
       gap: 8px;
@@ -149,10 +226,7 @@ export default async function handler(req, res) {
       font-weight: 700;
       cursor: pointer;
     }
-    button.secondary {
-      background: #e5e7eb;
-      color: #111827;
-    }
+    button.secondary { background: #e5e7eb; color: #111827; }
     .actions {
       display: flex;
       gap: 10px;
@@ -164,6 +238,19 @@ export default async function handler(req, res) {
       color: var(--muted);
       font-size: 13px;
       line-height: 1.7;
+    }
+    .message {
+      margin: 0 0 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #eef2ff;
+      color: #3730a3;
+      display: none;
+      font-weight: 650;
+    }
+    .message.error {
+      background: #fee2e2;
+      color: #991b1b;
     }
     .full { grid-column: 1 / -1; }
     @media (max-width: 760px) {
@@ -180,106 +267,171 @@ export default async function handler(req, res) {
     <header>
       <div>
         <h1>ぴろの友人AI ピット 管理画面</h1>
-        <div class="subtitle">性格調整UIの入口。v0.8.5では表示のみ。次版で保存機能をつなぐ。</div>
+        <div class="subtitle">性格設定をSupabaseに保存できます。v0.8.8ではまだLINE会話には反映しません。</div>
       </div>
       <div class="version">${PIT_VERSION}</div>
     </header>
 
-    <section class="grid">
-      <div class="card">
-        <h2>稼働状態</h2>
-        <dl>
-          <dt>Webhook</dt>
-          <dd><span class="pill"><span class="dot"></span>/api/webhook</span></dd>
-          <dt>Supabase URL</dt>
-          <dd>${envStatus(process.env.SUPABASE_URL)}</dd>
-          <dt>Service Role Key</dt>
-          <dd>${envStatus(process.env.SUPABASE_SERVICE_ROLE_KEY)}</dd>
-          <dt>Memory Update</dt>
-          <dd>${memoryUpdateEnabled ? "有効" : "無効"}</dd>
-        </dl>
-      </div>
+    <div id="message" class="message"></div>
 
-      <div class="card">
-        <h2>人格プリセット</h2>
-        <div class="checks">
-          <label><input type="radio" name="preset" checked> ピット標準</label>
-          <label><input type="radio" name="preset"> はる｜おはなしAI</label>
-          <label><input type="radio" name="preset"> ホストピット</label>
-          <label><input type="radio" name="preset"> 執事ピット</label>
-        </div>
-        <p class="note">ここはまだ見た目だけ。次版でSupabaseの personality_settings に保存予定。</p>
-      </div>
-
-      <div class="card">
-        <h2>性格スライダー</h2>
-
-        <div class="control">
-          <label>優しさ <small id="kindnessValue">80</small></label>
-          <input type="range" min="0" max="100" value="80" data-output="kindnessValue">
+    <form id="settingsForm">
+      <section class="grid">
+        <div class="card">
+          <h2>稼働状態</h2>
+          <dl>
+            <dt>Webhook</dt>
+            <dd><span class="pill"><span class="dot"></span>/api/webhook</span></dd>
+            <dt>Supabase URL</dt>
+            <dd>${envStatus(process.env.SUPABASE_URL)}</dd>
+            <dt>Service Role Key</dt>
+            <dd>${envStatus(process.env.SUPABASE_SERVICE_ROLE_KEY)}</dd>
+            <dt>Memory Update</dt>
+            <dd>${memoryUpdateEnabled ? "有効" : "無効"}</dd>
+            <dt>Settings Source</dt>
+            <dd>${source}</dd>
+          </dl>
         </div>
 
-        <div class="control">
-          <label>ユーモア <small id="humorValue">70</small></label>
-          <input type="range" min="0" max="100" value="70" data-output="humorValue">
+        <div class="card">
+          <h2>人格プリセット</h2>
+          <div class="checks">
+            <label><input type="radio" name="preset" value="pit_default" ${selected(settings.preset, "pit_default")}> ピット標準</label>
+            <label><input type="radio" name="preset" value="haru" ${selected(settings.preset, "haru")}> はる｜おはなしAI</label>
+            <label><input type="radio" name="preset" value="host_pit" ${selected(settings.preset, "host_pit")}> ホストピット</label>
+            <label><input type="radio" name="preset" value="butler_pit" ${selected(settings.preset, "butler_pit")}> 執事ピット</label>
+          </div>
+          <p class="note">保存はできます。LINE会話への反映は次版で行います。</p>
         </div>
 
-        <div class="control">
-          <label>ツッコミ <small id="tsukkomiValue">55</small></label>
-          <input type="range" min="0" max="100" value="55" data-output="tsukkomiValue">
+        <div class="card">
+          <h2>性格スライダー</h2>
+
+          <div class="control">
+            <label>優しさ <small id="kindnessValue">${settings.kindness}</small></label>
+            <input name="kindness" type="range" min="0" max="100" value="${settings.kindness}" data-output="kindnessValue">
+          </div>
+
+          <div class="control">
+            <label>ユーモア <small id="humorValue">${settings.humor}</small></label>
+            <input name="humor" type="range" min="0" max="100" value="${settings.humor}" data-output="humorValue">
+          </div>
+
+          <div class="control">
+            <label>ツッコミ <small id="tsukkomiValue">${settings.tsukkomi}</small></label>
+            <input name="tsukkomi" type="range" min="0" max="100" value="${settings.tsukkomi}" data-output="tsukkomiValue">
+          </div>
+
+          <div class="control">
+            <label>毒舌 <small id="dryValue">${settings.dry}</small></label>
+            <input name="dry" type="range" min="0" max="100" value="${settings.dry}" data-output="dryValue">
+          </div>
+
+          <div class="control">
+            <label>分析 <small id="analysisValue">${settings.analysis}</small></label>
+            <input name="analysis" type="range" min="0" max="100" value="${settings.analysis}" data-output="analysisValue">
+          </div>
         </div>
 
-        <div class="control">
-          <label>毒舌 <small id="dryValue">20</small></label>
-          <input type="range" min="0" max="100" value="20" data-output="dryValue">
+        <div class="card">
+          <h2>会話方針</h2>
+          <div class="checks">
+            <label><input type="checkbox" name="use_recent_topics" ${checked(settings.use_recent_topics)}> 前回の話題を自然に拾う</label>
+            <label><input type="checkbox" name="avoid_unun_ai" ${checked(settings.avoid_unun_ai)}> うんうんAI化を防ぐ</label>
+            <label><input type="checkbox" name="move_conversation_forward" ${checked(settings.move_conversation_forward)}> 会話を前に進める</label>
+            <label><input type="checkbox" name="search_when_unsure" ${checked(settings.search_when_unsure)}> 分からないことは調べる前提にする</label>
+            <label><input type="checkbox" name="host_mode" ${checked(settings.host_mode)}> ホスト風を強める</label>
+            <label><input type="checkbox" name="consultation_mode" ${checked(settings.consultation_mode)}> 相談モードを優先する</label>
+          </div>
         </div>
 
-        <div class="control">
-          <label>分析 <small id="analysisValue">45</small></label>
-          <input type="range" min="0" max="100" value="45" data-output="analysisValue">
+        <div class="card full">
+          <h2>カスタム性格メモ</h2>
+          <textarea name="custom_memo">${String(settings.custom_memo || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</textarea>
+          <div class="actions">
+            <button type="submit">保存</button>
+            <button type="button" class="secondary" onclick="location.reload()">再読み込み</button>
+          </div>
+          <p class="note">
+            秘密鍵の中身は表示しません。この画面で保存した設定はSupabaseに入りますが、現時点ではLINEボットの返答にはまだ反映されません。
+          </p>
         </div>
-      </div>
-
-      <div class="card">
-        <h2>会話方針</h2>
-        <div class="checks">
-          <label><input type="checkbox" checked> 前回の話題を自然に拾う</label>
-          <label><input type="checkbox" checked> うんうんAI化を防ぐ</label>
-          <label><input type="checkbox" checked> 会話を前に進める</label>
-          <label><input type="checkbox" checked> 分からないことは調べる前提にする</label>
-          <label><input type="checkbox"> ホスト風を強める</label>
-          <label><input type="checkbox"> 相談モードを優先する</label>
-        </div>
-      </div>
-
-      <div class="card full">
-        <h2>カスタム性格メモ</h2>
-        <textarea>相手を口説かない。
-でも、あり得ないほど気遣いができる。
-共感だけで終わらず、軽いツッコミや質問で会話を前に進める。
-全てを覚えていても、全ては言わない。</textarea>
-        <div class="actions">
-          <button type="button" onclick="alert('v0.8.5ではまだ保存しません。次版でSupabase保存にします。')">保存（次版予定）</button>
-          <button type="button" class="secondary" onclick="location.href='/api/status'">ステータス画面</button>
-        </div>
-        <p class="note">
-          この画面では秘密鍵の中身は表示しません。現時点ではLINEボット本体の挙動は変更していません。
-        </p>
-      </div>
-    </section>
+      </section>
+    </form>
   </main>
 
   <script>
+    const message = document.getElementById("message");
+
+    function showMessage(text, isError = false) {
+      message.textContent = text;
+      message.className = isError ? "message error" : "message";
+      message.style.display = "block";
+    }
+
     document.querySelectorAll('input[type="range"]').forEach((input) => {
       const output = document.getElementById(input.dataset.output);
       const update = () => { output.textContent = input.value; };
       input.addEventListener("input", update);
       update();
     });
+
+    document.getElementById("settingsForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const data = new FormData(form);
+
+      const payload = {
+        preset: data.get("preset"),
+        kindness: Number(data.get("kindness")),
+        humor: Number(data.get("humor")),
+        tsukkomi: Number(data.get("tsukkomi")),
+        dry: Number(data.get("dry")),
+        analysis: Number(data.get("analysis")),
+        use_recent_topics: data.has("use_recent_topics"),
+        avoid_unun_ai: data.has("avoid_unun_ai"),
+        move_conversation_forward: data.has("move_conversation_forward"),
+        search_when_unsure: data.has("search_when_unsure"),
+        host_mode: data.has("host_mode"),
+        consultation_mode: data.has("consultation_mode"),
+        custom_memo: data.get("custom_memo") || ""
+      };
+
+      try {
+        showMessage("保存中...");
+        const res = await fetch("/api/admin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) throw new Error(json.error || "保存に失敗しました");
+        showMessage("保存しました。次版でLINE会話へ反映します。");
+      } catch (error) {
+        showMessage(error.message || "保存に失敗しました", true);
+      }
+    });
   </script>
 </body>
 </html>`;
+}
 
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.status(200).send(html);
+export default async function handler(req, res) {
+  try {
+    if (req.method === "POST") {
+      let body = req.body;
+      if (typeof body === "string") {
+        body = JSON.parse(body || "{}");
+      }
+      const saved = await saveSettings(body || {});
+      return jsonResponse(res, 200, { ok: true, settings: saved });
+    }
+
+    const { settings, source } = await loadSettings();
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.statusCode = 200;
+    res.end(htmlPage(sanitizeSettings(settings), source));
+  } catch (error) {
+    console.error("Admin UI error:", error);
+    return jsonResponse(res, 500, { ok: false, error: error?.message || "Internal Server Error" });
+  }
 }

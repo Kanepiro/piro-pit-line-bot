@@ -1,0 +1,16 @@
+v0.8.8 admin save settings
+
+追加:
+- /api/admin で Supabase の personality_settings から設定を読み込み
+- 管理画面で変更した設定を POST /api/admin で personality_settings に保存
+- /api/status と /api は /api/admin へリダイレクト
+
+重要:
+- v0.8.8では保存まで。LINE会話のプロンプトにはまだ反映しない。
+- 次版 v0.8.9 で webhook.js が personality_settings を読み、会話プロンプトへ反映する予定。
+
+事前に必要なSupabaseテーブル:
+public.personality_settings
+- id text primary key
+- settings jsonb not null default '{}'::jsonb
+- updated_at timestamptz not null default now()
