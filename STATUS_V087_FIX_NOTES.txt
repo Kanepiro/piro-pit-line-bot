@@ -1,0 +1,14 @@
+v0.8.7 status redirect fix
+
+状況:
+- /api/admin は表示成功。
+- /api/status だけ 500 で落ちていた。
+
+修正:
+- /api/status を複雑なHTML表示から、/api/admin への最小リダイレクトに変更。
+- /api も /api/admin へリダイレクト。
+- LINE webhook本体の挙動は変更なし。
+
+確認URL:
+- https://piro-pit-line-bot.vercel.app/api/admin
+- https://piro-pit-line-bot.vercel.app/api/status  → /api/adminへ移動すればOK

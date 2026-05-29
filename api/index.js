@@ -1,4 +1,5 @@
-module.exports = async function handler(req, res) {
-  res.status(302).setHeader("Location", "/api/admin");
+export default async function handler(req, res) {
+  res.statusCode = 302;
+  res.setHeader("Location", "/api/admin");
   res.end();
-};
+}

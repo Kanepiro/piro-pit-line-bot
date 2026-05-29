@@ -1,0 +1,19 @@
+v0.8.6 admin UI ESM fix
+
+原因:
+- package.json が "type": "module" のため、Vercel API Functions も ESM として扱われる。
+- v0.8.5 で追加した api/status.js / api/admin.js / api/index.js が CommonJS の module.exports 形式だったため、Serverless Function が 500 でクラッシュしていた。
+
+修正:
+- module.exports を export default に変更。
+- LINE Webhook本体の挙動は変更なし。
+- 管理UI/ステータスUIのクラッシュ修正のみ。
+
+変換したファイル:
+- api/status.js
+- api/admin.js
+- api/index.js
+
+確認URL:
+- https://piro-pit-line-bot.vercel.app/api/admin
+- https://piro-pit-line-bot.vercel.app/api/status

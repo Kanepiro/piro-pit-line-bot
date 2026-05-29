@@ -20,7 +20,7 @@ const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.8.5-admin-ui-supabase-privacy";
+const PIT_VERSION = "v0.8.7-status-redirect-fix-supabase-privacy";
 const MEMORY_OUTPUT_TOKENS = 260;
 const MEMORY_UPDATE_ENABLED = (process.env.PIT_MEMORY_UPDATE_ENABLED ?? "true") !== "false";
 const MIN_MEMORY_UPDATE_CHARS = Math.max(0, Number(process.env.PIT_MIN_MEMORY_UPDATE_CHARS ?? "8") || 8);

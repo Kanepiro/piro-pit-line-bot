@@ -1,4 +1,4 @@
-const PIT_VERSION = "v0.8.6-admin-ui-esm-fix-supabase-privacy";
+const PIT_VERSION = "v0.8.7-status-redirect-fix-supabase-privacy";
 
 function envStatus(value) {
   return value ? "設定済み" : "未設定";
