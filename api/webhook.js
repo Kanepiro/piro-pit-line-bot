@@ -20,8 +20,10 @@ const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.7.1-related-search-supabase-privacy";
+const PIT_VERSION = "v0.8.0-auto-memory-supabase-privacy";
 const MEMORY_OUTPUT_TOKENS = 260;
+const MEMORY_UPDATE_ENABLED = (process.env.PIT_MEMORY_UPDATE_ENABLED ?? "true") !== "false";
+const MIN_MEMORY_UPDATE_CHARS = Math.max(0, Number(process.env.PIT_MIN_MEMORY_UPDATE_CHARS ?? "8") || 8);
 const DEFAULT_MODEL = "gpt-5.5";
 const LINE_PROFILE_ENDPOINT = "https://api.line.me/v2/bot/profile";
 const MIN_REPLY_DELAY_MS = Math.max(0, Number(process.env.PIT_MIN_REPLY_DELAY_MS ?? "1200") || 0);
@@ -451,14 +453,38 @@ ${memoryText || "まだ十分な相手別メモはない。今回の会話から
 `.trim();
 }
 
+
+function shouldUpdatePersonMemory(userText, replyText) {
+  if (!MEMORY_UPDATE_ENABLED) return false;
+
+  const text = safeText(userText);
+  if (text.length < MIN_MEMORY_UPDATE_CHARS) return false;
+  if (/^(テスト|test|hello|hi|やあ|こんにちは|おはよう|おやすみ|ありがとう|ありがと|うん|はい|ｗ+|w+)$/i.test(text)) return false;
+  if (isForgetMemoryCommand(text) || isAdminCommand(text)) return false;
+
+  // 「その人らしさ」に繋がりやすい発言だけメモ更新候補にする。
+  const memorySignals = [
+    "好き", "苦手", "嫌い", "得意", "疲れ", "しんど", "つら", "不安", "寂し", "嬉し", "楽しい",
+    "仕事", "会社", "上司", "同僚", "家族", "母", "父", "友達", "彼氏", "彼女", "夫", "妻",
+    "犬", "猫", "ペット", "趣味", "最近", "いつも", "前に", "また", "悩", "困", "眠", "体調",
+    "転職", "学校", "病院", "推し", "甘い", "辛い", "カフェ", "音楽", "映画", "漫画", "ゲーム",
+    "私は", "私って", "自分", "うち", "僕は", "俺は"
+  ];
+
+  return memorySignals.some((word) => text.includes(word));
+}
+
+
 async function updatePersonMemory({ userId, profile, oldMemory, userText, replyText }) {
+  if (!shouldUpdatePersonMemory(userText, replyText)) return;
+
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   if (!apiKey || !userId) return;
 
   const displayName = safeText(profile?.displayName, "不明");
   const prompt = `
-あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。
+あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。v0.8.0では「個人情報」ではなく「会話を自然にする手がかり」だけを残す。
 会話ログ全文ではなく、次回の会話を自然にするための短いメモだけを残す。
 
 保存してよい:
@@ -748,7 +774,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const toneLevel = getToneLevel();
     const hasPiroUserId = Boolean(process.env.PIRO_USER_ID);
-    return res.status(200).send(`Piro Pit Bot ${PIT_VERSION} is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}. SUPABASE=${hasSupabase() ? "set" : "not set"}`);
+    return res.status(200).send(`Piro Pit Bot ${PIT_VERSION} is alive. PIT_TONE_LEVEL=${toneLevel}. PIRO_USER_ID=${hasPiroUserId ? "set" : "not set"}. SUPABASE=${hasSupabase() ? "set" : "not set"}. MEMORY_AUTO=${MEMORY_UPDATE_ENABLED ? "on" : "off"}`);
   }
 
   if (req.method !== "POST") {
@@ -843,4 +869,4 @@ export default async function handler(req, res) {
 }
 
 
-// v0.7.1: simple keyword-based related history retrieval from Supabase is enabled. Vector search is still a later step.
+// v0.8.0: automatic person memory update is enabled with a lightweight guard to avoid updating on every trivial message. Vector search is still a later step.

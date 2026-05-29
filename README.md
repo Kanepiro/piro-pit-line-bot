@@ -174,3 +174,18 @@ Piro Pit Bot v0.6.0-supabase-privacy is alive. PIT_TONE_LEVEL=10. PIRO_USER_ID=s
 ```
 
 その後、LINEで1通送ると `line_messages` に user/assistant の2行が保存されます。
+
+
+## v0.8.0 auto memory
+
+追加内容:
+- 会話ログ保存は維持
+- 関連過去ログ検索は維持
+- `person_memories` を自動更新
+- ただし短い挨拶・テスト・単純返答ではメモ更新しない軽量ガードを追加
+- `PIT_MEMORY_UPDATE_ENABLED=false` で自動メモリ更新を停止可能
+- `PIT_MIN_MEMORY_UPDATE_CHARS` でメモリ更新候補にする最小文字数を調整可能
+
+テスト例:
+「実は甘いものを食べると少し元気になるんだよね」
+→ 数秒後〜次回以降に `person_memories` が更新される想定。
