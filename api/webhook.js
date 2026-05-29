@@ -20,7 +20,7 @@ const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.6.0-supabase-privacy";
+const PIT_VERSION = "v0.7.1-related-search-supabase-privacy";
 const MEMORY_OUTPUT_TOKENS = 260;
 const DEFAULT_MODEL = "gpt-5.5";
 const LINE_PROFILE_ENDPOINT = "https://api.line.me/v2/bot/profile";
@@ -198,6 +198,77 @@ function buildRecentMessagesInstruction(messages) {
 - これは会話の連続性を保つための直近ログ。
 - そのまま引用しない。
 - 相手が続きの話をしている時だけ自然に拾う。
+${lines}
+`.trim();
+}
+
+
+function extractSearchTerms(text) {
+  const source = safeText(text).toLowerCase();
+  const stopwords = new Set([
+    "これ", "それ", "あれ", "どれ", "ここ", "そこ", "あそこ", "今日", "昨日", "明日",
+    "です", "ます", "する", "した", "して", "ある", "いる", "ない", "こと", "もの", "ため",
+    "なんか", "ちょっと", "かな", "かも", "そう", "うん", "はい", "テスト"
+  ]);
+  const raw = source.match(/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}a-z0-9ー]{2,}/gu) || [];
+  const terms = [];
+  for (const item of raw) {
+    const term = item.trim();
+    if (!term || stopwords.has(term)) continue;
+    if (term.length > 24) continue;
+    if (!terms.includes(term)) terms.push(term);
+    if (terms.length >= 5) break;
+  }
+  return terms;
+}
+
+function escapePostgrestLikeTerm(term) {
+  return safeText(term)
+    .replace(/\\/g, "\\\\")
+    .replace(/\*/g, "")
+    .replace(/,/g, "")
+    .replace(/[()]/g, "")
+    .slice(0, 40);
+}
+
+async function loadRelatedSupabaseMessages(userId, userText, limit = 8) {
+  if (!userId || !hasSupabase()) return [];
+
+  const terms = extractSearchTerms(userText).map(escapePostgrestLikeTerm).filter(Boolean);
+  if (!terms.length) return [];
+
+  try {
+    const orQuery = terms
+      .map((term) => `content.ilike.*${encodeURIComponent(term)}*`)
+      .join(",");
+    const response = await supabaseRequest(
+      `/line_messages?line_user_id=eq.${encodeURIComponent(userId)}&select=role,content,created_at&or=(${orQuery})&order=created_at.desc&limit=${limit}`,
+      { method: "GET" }
+    );
+    const rows = await response.json();
+    return Array.isArray(rows) ? rows.reverse() : [];
+  } catch (error) {
+    console.error("Supabase related messages load error:", error);
+    return [];
+  }
+}
+
+function buildRelatedMessagesInstruction(messages) {
+  if (!messages?.length) {
+    return "関連過去ログ: 今回の発言に強く関連する過去ログはまだ少ない。無理に過去話へ寄せない。";
+  }
+
+  const lines = messages.map((m) => {
+    const role = m.role === "assistant" ? "ピット" : "相手";
+    return `- ${role}: ${clampLineText(m.content, 260)}`;
+  }).join("\n");
+
+  return `
+関連過去ログ:
+- 今回の発言と似た単語を含む過去ログ。
+- 相手に「検索した」とは言わない。
+- 必要な時だけ、自然に思い出したように使う。
+- 監視感・分析感を出さない。
 ${lines}
 `.trim();
 }
@@ -614,12 +685,12 @@ async function callOpenAI(payload, apiKey) {
   });
 }
 
-async function generatePitReply(userText, personMemoryInstruction = "", recentMessagesInstruction = "") {
+async function generatePitReply(userText, personMemoryInstruction = "", recentMessagesInstruction = "", relatedMessagesInstruction = "") {
   await sleep(randomReplyDelayMs());
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const style = pickStyle();
-  const instructions = buildPitInstructions(style, `${personMemoryInstruction}\n\n${recentMessagesInstruction}`);
+  const instructions = buildPitInstructions(style, `${personMemoryInstruction}\n\n${recentMessagesInstruction}\n\n${relatedMessagesInstruction}`);
 
   if (!apiKey) {
     return "ピットです。OpenAI APIキーが未設定なので、まだ看板だけの友人AIです。ぴろに設定の続きをやらせてください。";
@@ -743,8 +814,10 @@ export default async function handler(req, res) {
       const personMemoryInstruction = buildPersonMemoryInstruction(personMemory, profile);
       const recentMessages = await loadRecentSupabaseMessages(sourceUserId, 16);
       const recentMessagesInstruction = buildRecentMessagesInstruction(recentMessages);
+      const relatedMessages = await loadRelatedSupabaseMessages(sourceUserId, userText, 8);
+      const relatedMessagesInstruction = buildRelatedMessagesInstruction(relatedMessages);
 
-      const replyText = await generatePitReply(userText, personMemoryInstruction, recentMessagesInstruction);
+      const replyText = await generatePitReply(userText, personMemoryInstruction, recentMessagesInstruction, relatedMessagesInstruction);
       await replyToLine(event.replyToken, replyText);
       await saveSupabaseMessage({
         userId: sourceUserId,
@@ -768,3 +841,6 @@ export default async function handler(req, res) {
 
   return res.status(200).json({ ok: true });
 }
+
+
+// v0.7.1: simple keyword-based related history retrieval from Supabase is enabled. Vector search is still a later step.

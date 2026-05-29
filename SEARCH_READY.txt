@@ -1,0 +1,12 @@
+v0.7.1 Related Search
+
+Implemented:
+- Save all LINE text messages to Supabase
+- Load recent conversation logs
+- Extract simple search terms from the current message
+- Retrieve related past messages from Supabase with ilike search
+- Inject related history into the GPT prompt without telling the user it searched
+
+Not yet implemented:
+- Embeddings / vector search
+- Automatic long-term memory summarization
