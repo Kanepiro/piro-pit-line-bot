@@ -20,7 +20,7 @@ const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.8.9-admin-save-fetch-fix-supabase-privacy";
+const PIT_VERSION = "v0.9.0-personality-apply-supabase-privacy";
 const MEMORY_OUTPUT_TOKENS = 260;
 const MEMORY_UPDATE_ENABLED = (process.env.PIT_MEMORY_UPDATE_ENABLED ?? "true") !== "false";
 const MIN_MEMORY_UPDATE_CHARS = Math.max(0, Number(process.env.PIT_MIN_MEMORY_UPDATE_CHARS ?? "8") || 8);
@@ -66,7 +66,9 @@ const NO_KEIGO_RULE = `
 - 友達同士みたいな自然な口調を優先
 - 真面目な話でも丁寧すぎない
 - 少し語尾が崩れていてよい
-`;
+`;    const personalitySettings = await loadPersonalitySettings();
+    const personalityInstruction = buildPersonalityInstruction(personalitySettings);
+
 
 const ADLIB_STYLES = [
   "相手の一言にまず普通に反応し、必要なら最後に軽く一言だけツッコむ。",
@@ -402,6 +404,62 @@ async function savePersonMemory(userId, memory) {
   }
 }
 
+async function loadPersonalitySettings() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
+
+  try {
+    const res = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/personality_settings?id=eq.default&select=settings`, {
+      method: "GET",
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        Accept: "application/json"
+      }
+    });
+
+    if (!res.ok) {
+      console.error("Personality settings load failed:", await res.text());
+      return null;
+    }
+
+    const rows = await res.json();
+    return rows?.[0]?.settings || null;
+  } catch (error) {
+    console.error("Personality settings load error:", error);
+    return null;
+  }
+}
+
+function buildPersonalityInstruction(settings) {
+  if (!settings) return "";
+
+  const lines = [];
+  lines.push("【管理画面の性格設定】");
+  lines.push(`人格プリセット: ${settings.preset || "pit_default"}`);
+  lines.push(`優しさ: ${settings.kindness ?? 80}/100`);
+  lines.push(`ユーモア: ${settings.humor ?? 70}/100`);
+  lines.push(`ツッコミ: ${settings.tsukkomi ?? 55}/100`);
+  lines.push(`毒舌: ${settings.dry ?? 20}/100`);
+  lines.push(`分析: ${settings.analysis ?? 45}/100`);
+
+  if (settings.use_recent_topics) lines.push("- 前回の話題を自然に拾う。");
+  if (settings.avoid_unun_ai) lines.push("- 共感だけで終わる「うんうんAI」にならず、会話を前に進める。");
+  if (settings.move_conversation_forward) lines.push("- 必ず相手が返しやすい一言・質問・軽いツッコミを入れる。");
+  if (settings.search_when_unsure) lines.push("- 分からないことや最新情報が必要な話題は、知ったかぶりせず確認する前提で返す。");
+  if (settings.host_mode) lines.push("- 少しだけホスト風に、相手を大切に扱う。ただし口説かない。");
+  if (settings.consultation_mode) lines.push("- 相談モードを少し優先し、状況整理を手伝う。");
+
+  if (settings.custom_memo) {
+    lines.push("【カスタム性格メモ】");
+    lines.push(String(settings.custom_memo).slice(0, 1200));
+  }
+
+  lines.push("上記は会話の味付けとして使う。数値や設定名を相手に直接言わない。");
+  return lines.join("\\n");
+}
+
+
+
 async function deletePersonMemory(userId) {
   if (!userId) return;
   warmMemoryStore.delete(userId);
@@ -538,7 +596,7 @@ async function updatePersonMemory({ userId, profile, oldMemory, userText, replyT
 
   const displayName = safeText(profile?.displayName, "不明");
   const prompt = `
-あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。
+${personalityInstruction ? personalityInstruction + '\n\n' : ''}あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。
 目的は、次回以降の会話を自然にすること。個人情報の収集ではない。
 
 v0.8.1では、メモを必ず以下の4分類で整理する。
