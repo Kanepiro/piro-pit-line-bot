@@ -1,0 +1,18 @@
+v0.8.2 memory trigger fix
+
+原因:
+- v0.8.1では「チョコより和菓子の方が落ち着くかも」がメモ更新判定に引っかからなかった。
+- line_messagesには保存されるが、person_memories更新はスキップされていた。
+
+修正:
+- メモ更新トリガーに以下を追加:
+  チョコ / ケーキ / 和菓子 / 抹茶 / 甘味 / 落ち着 / 元気 / 効く / 気分 / 安心
+- Vercel Logsに以下を出す:
+  Memory update skipped: no trigger
+  Memory update started
+  Memory update saved
+
+テスト:
+- 「チョコより和菓子の方が落ち着くかも」
+- 「実は抹茶の和菓子が一番落ち着くかも」
+- person_memories が # fact / # style / # open_topics / # avoid 形式に更新されれば成功

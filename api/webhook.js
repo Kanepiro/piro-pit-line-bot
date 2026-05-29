@@ -20,7 +20,7 @@ const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.8.1-memory-classified-supabase-privacy";
+const PIT_VERSION = "v0.8.3-memory-patterns-supabase-privacy";
 const MEMORY_OUTPUT_TOKENS = 260;
 const MEMORY_UPDATE_ENABLED = (process.env.PIT_MEMORY_UPDATE_ENABLED ?? "true") !== "false";
 const MIN_MEMORY_UPDATE_CHARS = Math.max(0, Number(process.env.PIT_MIN_MEMORY_UPDATE_CHARS ?? "8") || 8);
@@ -455,28 +455,82 @@ ${memoryText || "まだ十分な相手別メモはない。今回の会話から
 
 
 function shouldUpdatePersonMemory(userText, replyText) {
-  if (!MEMORY_UPDATE_ENABLED) return false;
+  const u = safeText(userText);
+  if (u.length < 8) return false;
 
-  const text = safeText(userText);
-  if (text.length < MIN_MEMORY_UPDATE_CHARS) return false;
-  if (/^(テスト|test|hello|hi|やあ|こんにちは|おはよう|おやすみ|ありがとう|ありがと|うん|はい|ｗ+|w+)$/i.test(text)) return false;
-  if (isForgetMemoryCommand(text) || isAdminCommand(text)) return false;
+  // v0.8.3:
+  // 食品名などの個別ワードを増やすのではなく、
+  // 「好み・苦手・比較・安心/元気/疲れ・最近/実は」など
+  // 会話メモ化しやすい日本語パターンで判定する。
+  const memoryPatterns = [
+    /実は.{2,}/,
+    /最近.{2,}/,
+    /前から.{2,}/,
+    /いつも.{2,}/,
+    /よく.{2,}/,
 
-  // 「その人らしさ」に繋がりやすい発言だけメモ更新候補にする。
-  const memorySignals = [
-    "好き", "苦手", "嫌い", "得意", "疲れ", "しんど", "つら", "不安", "寂し", "嬉し", "楽しい",
-    "仕事", "会社", "上司", "同僚", "家族", "母", "父", "友達", "彼氏", "彼女", "夫", "妻",
-    "犬", "猫", "ペット", "趣味", "最近", "いつも", "前に", "また", "悩", "困", "眠", "体調",
-    "転職", "学校", "病院", "推し", "甘い", "辛い", "カフェ", "音楽", "映画", "漫画", "ゲーム",
-    "私は", "私って", "自分", "うち", "僕は", "俺は"
+    /.+が好き/,
+    /.+好きなんだ/,
+    /.+好きかも/,
+    /.+が苦手/,
+    /.+苦手なんだ/,
+    /.+嫌い/,
+    /.+得意/,
+    /.+不得意/,
+
+    /.+より.+/,
+    /.+の方が.+/,
+    /.+ほうが.+/,
+    /.+よりも.+/,
+
+    /.+すると.+元気/,
+    /.+すると.+落ち着/,
+    /.+すると.+安心/,
+    /.+すると.+楽/,
+    /.+だと.+元気/,
+    /.+だと.+落ち着/,
+    /.+だと.+安心/,
+    /.+だと.+楽/,
+
+    /.+は疲れ/,
+    /.+だと疲れ/,
+    /.+すると疲れ/,
+    /.+はしんど/,
+    /.+だとしんど/,
+
+    /.+してほしい/,
+    /.+されると嬉しい/,
+    /.+されると嫌/,
+    /.+言われると嬉しい/,
+    /.+言われると嫌/,
+
+    /覚えて.+(嬉しい|助かる|ありがたい|いい)/,
+    /前回.+(拾|覚え|話)/,
+    /話しやすい/,
+    /落ち着く/,
+    /安心する/,
+    /元気になる/
   ];
 
-  return memorySignals.some((word) => text.includes(word));
+  if (memoryPatterns.some((rx) => rx.test(u))) return true;
+
+  // 補助的な一般カテゴリ。単独では弱いので、自己言及・感情語・比較語とセットの時だけ通す。
+  const broadSignals = ["仕事", "職場", "上司", "学校", "家族", "友達", "推し", "趣味", "食べ", "飲み", "寝", "朝", "夜"];
+  const contextSignals = ["私は", "僕は", "俺は", "自分", "うち", "好き", "苦手", "疲れ", "嬉しい", "嫌", "落ち着", "安心", "元気", "より", "方が", "ほうが"];
+  const hasBroad = broadSignals.some((w) => u.includes(w));
+  const hasContext = contextSignals.some((w) => u.includes(w));
+  if (hasBroad && hasContext) return true;
+
+  return false;
 }
 
 
 async function updatePersonMemory({ userId, profile, oldMemory, userText, replyText }) {
-  if (!shouldUpdatePersonMemory(userText, replyText)) return;
+  if (!shouldUpdatePersonMemory(userText, replyText)) {
+    console.log("Memory update skipped: no trigger");
+    return;
+  }
+  console.log("Memory update started");
 
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
@@ -547,7 +601,12 @@ ${replyText}
     }
     const data = await response.json();
     const newMemory = extractOutputText(data);
-    if (newMemory) await savePersonMemory(userId, newMemory);
+    if (newMemory) {
+      await savePersonMemory(userId, newMemory);
+      console.log("Memory update saved");
+    } else {
+      console.log("Memory update skipped: empty output");
+    }
   } catch (error) {
     console.error("Memory update exception:", error);
   }
@@ -891,4 +950,4 @@ export default async function handler(req, res) {
 }
 
 
-// v0.8.1: person memory is now categorized into fact/style/open_topics/avoid. Vector search is still a later step.
+// v0.8.3: memory update trigger now uses Japanese preference/comparison/comfort patterns instead of item-specific keywords. Debug logs remain enabled. Vector search is still a later step.
