@@ -1,0 +1,17 @@
+v0.8.4 status UI
+
+追加:
+- /api/status
+  ブラウザで開くと簡易ステータス画面を表示
+  - Version
+  - SUPABASE_URL が設定済みか
+  - SUPABASE_SERVICE_ROLE_KEY が設定済みか
+  - PIT_MEMORY_UPDATE_ENABLED の状態
+  - Webhook URL
+
+- /api/index.js
+  /api を開いた場合に /api/status へリダイレクト
+
+注意:
+- 秘密鍵の中身は表示しない。set / not set のみ。
+- LINE Webhook本体の挙動は変えない。
