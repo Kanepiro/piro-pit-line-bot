@@ -1,0 +1,18 @@
+v0.8.9 admin save fetch fix
+
+原因候補:
+- v0.8.8 の /api/admin は @supabase/supabase-js を import していた。
+- 既存プロジェクトの依存関係に @supabase/supabase-js が無い場合、Vercel Function が起動時に落ちる。
+
+修正:
+- @supabase/supabase-js を使わず、標準 fetch で Supabase REST API を直接呼ぶ方式に変更。
+- /api/admin の読み込みと保存だけを修正。
+- LINE webhook本体の挙動は変更なし。
+- /api/status と /api は /api/admin へリダイレクトのまま。
+
+確認:
+1. GitHub上書き
+2. Vercel再デプロイ
+3. /api/admin を開く
+4. スライダーを変更して保存
+5. Supabase personality_settings の settings が更新されるか確認

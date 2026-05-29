@@ -1,6 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
-
-const PIT_VERSION = "v0.8.8-admin-save-settings-supabase-privacy";
+const PIT_VERSION = "v0.8.9-admin-save-fetch-fix-supabase-privacy";
 
 function envStatus(value) {
   return value ? "設定済み" : "未設定";
@@ -12,11 +10,46 @@ function jsonResponse(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function getSupabase() {
+function getSupabaseConfig() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  return createClient(url, key, { auth: { persistSession: false } });
+  return {
+    restUrl: `${url.replace(/\/$/, "")}/rest/v1`,
+    key
+  };
+}
+
+async function supabaseFetch(path, options = {}) {
+  const config = getSupabaseConfig();
+  if (!config) throw new Error("Supabase env vars are not set");
+
+  const res = await fetch(`${config.restUrl}${path}`, {
+    ...options,
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${config.key}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+
+  const text = await res.text();
+  let json = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = text;
+    }
+  }
+
+  if (!res.ok) {
+    const message = typeof json === "object" && json?.message ? json.message : text || `Supabase HTTP ${res.status}`;
+    throw new Error(message);
+  }
+
+  return json;
 }
 
 const defaultSettings = {
@@ -65,35 +98,40 @@ function sanitizeSettings(input) {
 }
 
 async function loadSettings() {
-  const supabase = getSupabase();
-  if (!supabase) return { settings: defaultSettings, source: "default_no_supabase" };
+  if (!getSupabaseConfig()) return { settings: defaultSettings, source: "default_no_supabase" };
 
-  const { data, error } = await supabase
-    .from("personality_settings")
-    .select("settings")
-    .eq("id", "default")
-    .single();
+  try {
+    const rows = await supabaseFetch("/personality_settings?id=eq.default&select=settings", {
+      method: "GET",
+      headers: { Accept: "application/json" }
+    });
 
-  if (error || !data?.settings) {
-    return { settings: defaultSettings, source: "default_missing_row" };
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row?.settings) {
+      return { settings: defaultSettings, source: "default_missing_row" };
+    }
+    return { settings: mergeSettings(row.settings), source: "supabase" };
+  } catch (error) {
+    console.error("Load personality settings failed:", error);
+    return { settings: defaultSettings, source: "default_load_error" };
   }
-  return { settings: mergeSettings(data.settings), source: "supabase" };
 }
 
 async function saveSettings(settings) {
-  const supabase = getSupabase();
-  if (!supabase) throw new Error("Supabase env vars are not set");
-
   const clean = sanitizeSettings(settings);
-  const { error } = await supabase
-    .from("personality_settings")
-    .upsert({
+
+  await supabaseFetch("/personality_settings?on_conflict=id", {
+    method: "POST",
+    headers: {
+      Prefer: "resolution=merge-duplicates,return=minimal"
+    },
+    body: JSON.stringify({
       id: "default",
       settings: clean,
       updated_at: new Date().toISOString()
-    }, { onConflict: "id" });
+    })
+  });
 
-  if (error) throw error;
   return clean;
 }
 
