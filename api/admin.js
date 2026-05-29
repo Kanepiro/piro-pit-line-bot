@@ -1,4 +1,4 @@
-const PIT_VERSION = "v0.9.1-admin-version-fix-personality-apply";
+const PIT_VERSION = "v0.9.2-line-reply-fix-personality-apply";
 
 function envStatus(value) {
   return value ? "設定済み" : "未設定";

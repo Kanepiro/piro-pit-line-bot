@@ -20,7 +20,7 @@ const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.9.1-admin-version-fix-personality-apply";
+const PIT_VERSION = "v0.9.2-line-reply-fix-personality-apply";
 const MEMORY_OUTPUT_TOKENS = 260;
 const MEMORY_UPDATE_ENABLED = (process.env.PIT_MEMORY_UPDATE_ENABLED ?? "true") !== "false";
 const MIN_MEMORY_UPDATE_CHARS = Math.max(0, Number(process.env.PIT_MIN_MEMORY_UPDATE_CHARS ?? "8") || 8);
@@ -66,8 +66,7 @@ const NO_KEIGO_RULE = `
 - 友達同士みたいな自然な口調を優先
 - 真面目な話でも丁寧すぎない
 - 少し語尾が崩れていてよい
-`;    const personalitySettings = await loadPersonalitySettings();
-    const personalityInstruction = buildPersonalityInstruction(personalitySettings);
+`;
 
 
 const ADLIB_STYLES = [
@@ -405,14 +404,16 @@ async function savePersonMemory(userId, memory) {
 }
 
 async function loadPersonalitySettings() {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
 
   try {
-    const res = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/personality_settings?id=eq.default&select=settings`, {
+    const res = await fetch(`${url.replace(/\/$/, "")}/rest/v1/personality_settings?id=eq.default&select=settings`, {
       method: "GET",
       headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: key,
+        Authorization: `Bearer ${key}`,
         Accept: "application/json"
       }
     });
@@ -596,7 +597,7 @@ async function updatePersonMemory({ userId, profile, oldMemory, userText, replyT
 
   const displayName = safeText(profile?.displayName, "不明");
   const prompt = `
-${personalityInstruction ? personalityInstruction + '\n\n' : ''}あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。
+あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。
 目的は、次回以降の会話を自然にすること。個人情報の収集ではない。
 
 v0.8.1では、メモを必ず以下の4分類で整理する。
@@ -850,12 +851,12 @@ async function callOpenAI(payload, apiKey) {
   });
 }
 
-async function generatePitReply(userText, personMemoryInstruction = "", recentMessagesInstruction = "", relatedMessagesInstruction = "") {
+async function generatePitReply(userText, personMemoryInstruction = "", recentMessagesInstruction = "", relatedMessagesInstruction = "", personalityInstruction = "") {
   await sleep(randomReplyDelayMs());
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const style = pickStyle();
-  const instructions = buildPitInstructions(style, `${personMemoryInstruction}\n\n${recentMessagesInstruction}\n\n${relatedMessagesInstruction}`);
+  const instructions = buildPitInstructions(style, `${personalityInstruction}\n\n${personMemoryInstruction}\n\n${recentMessagesInstruction}\n\n${relatedMessagesInstruction}`);
 
   if (!apiKey) {
     return "ピットです。OpenAI APIキーが未設定なので、まだ看板だけの友人AIです。ぴろに設定の続きをやらせてください。";
@@ -981,8 +982,10 @@ export default async function handler(req, res) {
       const recentMessagesInstruction = buildRecentMessagesInstruction(recentMessages);
       const relatedMessages = await loadRelatedSupabaseMessages(sourceUserId, userText, 8);
       const relatedMessagesInstruction = buildRelatedMessagesInstruction(relatedMessages);
+      const personalitySettings = await loadPersonalitySettings();
+      const personalityInstruction = buildPersonalityInstruction(personalitySettings);
 
-      const replyText = await generatePitReply(userText, personMemoryInstruction, recentMessagesInstruction, relatedMessagesInstruction);
+      const replyText = await generatePitReply(userText, personMemoryInstruction, recentMessagesInstruction, relatedMessagesInstruction, personalityInstruction);
       await replyToLine(event.replyToken, replyText);
       await saveSupabaseMessage({
         userId: sourceUserId,
@@ -1008,4 +1011,4 @@ export default async function handler(req, res) {
 }
 
 
-// v0.8.5: adds a minimal admin UI at /api/admin. Bot behavior is unchanged. Vector search is still a later step.
+// v0.9.2: fixes webhook startup crash and applies personality settings per request. Vector search is still a later step.
