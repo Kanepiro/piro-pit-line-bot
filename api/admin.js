@@ -1,10 +1,10 @@
-const PIT_VERSION = "v0.8.5-admin-ui-supabase-privacy";
+const PIT_VERSION = "v0.8.6-admin-ui-esm-fix-supabase-privacy";
 
 function envStatus(value) {
   return value ? "設定済み" : "未設定";
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   const memoryUpdateEnabled = process.env.PIT_MEMORY_UPDATE_ENABLED !== "false";
 
   const html = `<!doctype html>
@@ -282,4 +282,4 @@ module.exports = async function handler(req, res) {
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.status(200).send(html);
-};
+}
