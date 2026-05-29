@@ -1,4 +1,4 @@
-const PIT_VERSION = "v0.8.4-status-ui-supabase-privacy";
+const PIT_VERSION = "v0.8.5-admin-ui-supabase-privacy";
 
 function mask(value) {
   if (!value) return "not set";

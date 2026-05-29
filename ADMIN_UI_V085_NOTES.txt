@@ -1,0 +1,20 @@
+v0.8.5 admin UI
+
+追加:
+- /api/admin
+  管理画面の入口
+  - バージョン表示
+  - Supabase設定状態
+  - メモリ更新ON/OFF
+  - 人格プリセットUI
+  - 性格スライダーUI
+  - 会話方針チェックボックス
+  - カスタム性格メモ欄
+
+- /api/index.js
+  /api を開くと /api/admin へリダイレクト
+
+重要:
+- v0.8.5ではUI表示のみ。保存はまだしない。
+- LINEボット本体の挙動は変えない。
+- 次版 v0.8.6 で Supabase に personality_settings テーブルを追加して保存予定。
