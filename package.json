@@ -1,6 +1,6 @@
 {
   "name": "piro-pit-line-bot-gpt55-adlib",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "private": true
 }

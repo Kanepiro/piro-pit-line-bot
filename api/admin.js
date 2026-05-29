@@ -1,4 +1,4 @@
-const PIT_VERSION = "v0.8.9-admin-save-fetch-fix-supabase-privacy";
+const PIT_VERSION = "v0.9.1-admin-version-fix-personality-apply";
 
 function envStatus(value) {
   return value ? "設定済み" : "未設定";
@@ -305,7 +305,7 @@ function htmlPage(settings, source) {
     <header>
       <div>
         <h1>ぴろの友人AI ピット 管理画面</h1>
-        <div class="subtitle">性格設定をSupabaseに保存できます。v0.8.8ではまだLINE会話には反映しません。</div>
+        <div class="subtitle">性格設定をSupabaseに保存できます。v0.9.1ではLINE会話にも反映されます。</div>
       </div>
       <div class="version">${PIT_VERSION}</div>
     </header>
@@ -327,6 +327,8 @@ function htmlPage(settings, source) {
             <dd>${memoryUpdateEnabled ? "有効" : "無効"}</dd>
             <dt>Settings Source</dt>
             <dd>${source}</dd>
+            <dt>Personality Apply</dt>
+            <dd>LINE反映あり</dd>
           </dl>
         </div>
 
@@ -338,7 +340,7 @@ function htmlPage(settings, source) {
             <label><input type="radio" name="preset" value="host_pit" ${selected(settings.preset, "host_pit")}> ホストピット</label>
             <label><input type="radio" name="preset" value="butler_pit" ${selected(settings.preset, "butler_pit")}> 執事ピット</label>
           </div>
-          <p class="note">保存はできます。LINE会話への反映は次版で行います。</p>
+          <p class="note">保存した設定はLINE会話にも反映されます。</p>
         </div>
 
         <div class="card">
@@ -390,7 +392,7 @@ function htmlPage(settings, source) {
             <button type="button" class="secondary" onclick="location.reload()">再読み込み</button>
           </div>
           <p class="note">
-            秘密鍵の中身は表示しません。この画面で保存した設定はSupabaseに入りますが、現時点ではLINEボットの返答にはまだ反映されません。
+            秘密鍵の中身は表示しません。この画面で保存した設定はSupabaseに入り、LINEボットの返答にも反映されます。
           </p>
         </div>
       </section>
@@ -443,7 +445,7 @@ function htmlPage(settings, source) {
         });
         const json = await res.json();
         if (!res.ok || !json.ok) throw new Error(json.error || "保存に失敗しました");
-        showMessage("保存しました。次版でLINE会話へ反映します。");
+        showMessage("保存しました。LINE会話にも反映されます。");
       } catch (error) {
         showMessage(error.message || "保存に失敗しました", true);
       }
