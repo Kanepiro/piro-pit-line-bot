@@ -1,4 +1,4 @@
-const PIT_VERSION = "v0.9.2-line-reply-fix-personality-apply";
+const PIT_VERSION = "v0.9.3-persona-preset-fix";
 
 function envStatus(value) {
   return value ? "設定済み" : "未設定";
@@ -305,7 +305,7 @@ function htmlPage(settings, source) {
     <header>
       <div>
         <h1>ぴろの友人AI ピット 管理画面</h1>
-        <div class="subtitle">性格設定をSupabaseに保存できます。v0.9.1ではLINE会話にも反映されます。</div>
+        <div class="subtitle">性格設定をSupabaseに保存できます。v0.9.3では人格プリセットもLINE会話に反映されます。</div>
       </div>
       <div class="version">${PIT_VERSION}</div>
     </header>
@@ -328,7 +328,7 @@ function htmlPage(settings, source) {
             <dt>Settings Source</dt>
             <dd>${source}</dd>
             <dt>Personality Apply</dt>
-            <dd>LINE反映あり</dd>
+            <dd>LINE反映あり／プリセット反映あり</dd>
           </dl>
         </div>
 

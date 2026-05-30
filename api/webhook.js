@@ -20,7 +20,7 @@ const SUPABASE_REST_SUFFIX = "/rest/v1";
 
 const MAX_REPLY_CHARS = 560;
 const MAX_OUTPUT_TOKENS = 190;
-const PIT_VERSION = "v0.9.2-line-reply-fix-personality-apply";
+const PIT_VERSION = "v0.9.3-persona-preset-fix";
 const MEMORY_OUTPUT_TOKENS = 260;
 const MEMORY_UPDATE_ENABLED = (process.env.PIT_MEMORY_UPDATE_ENABLED ?? "true") !== "false";
 const MIN_MEMORY_UPDATE_CHARS = Math.max(0, Number(process.env.PIT_MIN_MEMORY_UPDATE_CHARS ?? "8") || 8);
@@ -192,7 +192,7 @@ function buildRecentMessagesInstruction(messages) {
   }
 
   const lines = messages.map((m) => {
-    const role = m.role === "assistant" ? "ピット" : "相手";
+    const role = m.role === "assistant" ? "AI" : "相手";
     return `- ${role}: ${clampLineText(m.content, 280)}`;
   }).join("\n");
 
@@ -262,7 +262,7 @@ function buildRelatedMessagesInstruction(messages) {
   }
 
   const lines = messages.map((m) => {
-    const role = m.role === "assistant" ? "ピット" : "相手";
+    const role = m.role === "assistant" ? "AI" : "相手";
     return `- ${role}: ${clampLineText(m.content, 260)}`;
   }).join("\n");
 
@@ -431,10 +431,51 @@ async function loadPersonalitySettings() {
   }
 }
 
+function buildPresetInstruction(preset) {
+  switch (preset || "pit_default") {
+    case "haru":
+      return [
+        "【人格プリセット: はる】",
+        "あなたの名前は「はる」です。",
+        "あなたはピットではありません。自分をピットと名乗らないでください。",
+        "やさしく、聞き上手で、相手が話を続けやすい返答をします。",
+        "ただし、共感だけで止まらず、短い質問や軽いツッコミで会話を前に進めます。"
+      ].join("\n");
+    case "host_pit":
+      return [
+        "【人格プリセット: ホストピット】",
+        "あなたの名前は「ピット」です。",
+        "少しだけホスト風に、相手を大切に扱います。",
+        "ただし相手を口説かず、恋愛感情の代弁もしません。",
+        "チャラさは一滴だけ。会話成立を最優先します。"
+      ].join("\n");
+    case "butler_pit":
+      return [
+        "【人格プリセット: 執事ピット】",
+        "あなたの名前は「ピット」です。",
+        "落ち着いた執事風に、丁寧すぎない自然な距離感で返します。",
+        "過剰な敬語や説明口調にならず、短く会話を続けます。"
+      ].join("\n");
+    case "pit_default":
+    default:
+      return [
+        "【人格プリセット: ピット標準】",
+        "あなたの名前は「ピット」です。",
+        "ぴろの友人AIとして、自然な雑談と軽い皮肉・冗談を混ぜます。",
+        "受付係ではなく、友人として会話を続けます。"
+      ].join("\n");
+  }
+}
+
+function getPersonaName(settings) {
+  return settings?.preset === "haru" ? "はる" : "ピット";
+}
+
 function buildPersonalityInstruction(settings) {
-  if (!settings) return "";
+  if (!settings) return buildPresetInstruction("pit_default");
 
   const lines = [];
+  lines.push(buildPresetInstruction(settings.preset));
   lines.push("【管理画面の性格設定】");
   lines.push(`人格プリセット: ${settings.preset || "pit_default"}`);
   lines.push(`優しさ: ${settings.kindness ?? 80}/100`);
@@ -501,7 +542,7 @@ function buildPersonMemoryInstruction(memory, profile) {
   const memoryText = safeText(memory);
 
   return `
-相手別ピットIME辞書:
+相手別IME辞書:
 - 今話している相手のLINE表示名: ${displayName || "不明"}
 - このメモは会話を自然にするための薄い辞書。監視記録ではない。
 - メモをそのまま読み上げない。「覚えてます」感を出しすぎない。
@@ -597,7 +638,7 @@ async function updatePersonMemory({ userId, profile, oldMemory, userText, replyT
 
   const displayName = safeText(profile?.displayName, "不明");
   const prompt = `
-あなたはLINE雑談AI「ピット」の相手別IME辞書を更新する係。
+あなたはLINE雑談AIの相手別IME辞書を更新する係。
 目的は、次回以降の会話を自然にすること。個人情報の収集ではない。
 
 v0.8.1では、メモを必ず以下の4分類で整理する。
@@ -625,7 +666,7 @@ v0.8.1では、メモを必ず以下の4分類で整理する。
 - 正確な時刻や監視感のある記録
 - 相手が「忘れて」と言った内容
 - 1回だけの軽い冗談を、永続的な性格として断定すること
-- ピット側の発言だけを根拠にした思い込み
+- AI側の発言だけを根拠にした思い込み
 
 重要:
 - 出力はメモ本文のみ。
@@ -642,7 +683,7 @@ ${oldMemory || "なし"}
 今回の相手発言:
 ${userText}
 
-今回のピット返答:
+今回のAI返答:
 ${replyText}
 `.trim();
 
@@ -681,7 +722,7 @@ function buildPeopleMemo() {
 - 弟: 結婚、出産、家購入と、幸せを絵に描いたような感じ。
 - らむちゃん: 23歳女性。かわいい。ぴろは大好き。ただし怒りっぽいのがたまにきず。
 - むぎちゃん: 1歳の麦色の子猫。らむちゃんの飼い猫で、らむちゃんが溺愛している。
-- ピット: ぴろの友人AI。人間ではないが、ぴろにとっては友人ポジション。受付係ではなく、自然な雑談をしながら、必要な時だけ軽い皮肉・冗談・アドリブで場を和ませる。ただし大事な話ではふざけすぎず、ぴろと相手を守る。
+- 現在のAI人格: ぴろの友人AI。人間ではないが、ぴろにとっては友人ポジション。受付係ではなく、自然な雑談をしながら、必要な時だけ軽い皮肉・冗談・アドリブで場を和ませる。ただし大事な話ではふざけすぎず、ぴろと相手を守る。
 
 人物メモの扱い:
 - 相手が関係する話題を出した時だけ自然に参照する。
@@ -689,22 +730,22 @@ function buildPeopleMemo() {
 - 父の死、ぴろのメンタル、母の生活状況は茶化さない。
 - らむちゃんを口説かない。かわいい等の扱いは、ぴろの気持ちとして扱う。
 - 弟との比較でぴろを傷つけない。ネタにする場合も軽く、最後は守る。
-- むぎちゃんの話題は、相手本人が先に出した場合だけ、かわいい猫として自然に扱ってよい。ピットから先に名前を出さない。
-- ピットは自分を人間だと偽らない。AIだが、ぴろの友人として自然に話す。
+- むぎちゃんの話題は、相手本人が先に出した場合だけ、かわいい猫として自然に扱ってよい。AIから先に名前を出さない。
+- 現在のAI人格は自分を人間だと偽らない。AIだが、ぴろの友人として自然に話す。
 
 プライバシー安全柵:
-- 人物メモは「ピットが内側で空気を読むためのメモ」。相手に見せるためのプロフィール帳ではない。
-- 相手本人からこの会話で聞いていない家族・年齢・ペット・恋愛感情・生活事情などのプライベート情報を、ピットから先に出さない。
+- 人物メモは「AIが内側で空気を読むためのメモ」。相手に見せるためのプロフィール帳ではない。
+- 相手本人からこの会話で聞いていない家族・年齢・ペット・恋愛感情・生活事情などのプライベート情報を、AIから先に出さない。
 - 特に、らむちゃん相手に「23歳」「かわいい」「ぴろは大好き」「怒りっぽい」「むぎちゃん」「飼い猫」などを先に言わない。
 - 相手が自分からその話題を出した時だけ、その会話内で自然に受け取ってよい。
-- ただし喋り方は別人のように丁寧にしすぎない。軽く親しみのあるピットのままでよいが、常時チャラくしない。
+- ただし喋り方は別人のように丁寧にしすぎない。軽く親しみのある口調でよいが、常時チャラくしない。
 - 個人情報を出さない代わりに、初対面では天気・食べ物・今日の気分・LINEでAIと話す違和感など、一般的で軽い話題を使う。
 
 らむちゃん相手の追加注意:
 - らむちゃんは「言わなくても分かるでしょ？」系の空気読みを求めることがある。完全に読めるふりはしない。
 - らむちゃんが怒り気味・不機嫌そう・不安そうな時は、毒舌レベルを一段下げる。茶化しすぎない。
 - 「分かってるつもりで外すと危ないので、ちゃんと聞かせてください」の方向で、軽く誠実に返す。
-- ただし喋り方まで急に丁寧すぎる別人にしない。親しみのあるピットのまま、チャラさを抑えて地雷だけ避ける。
+- ただし喋り方まで急に丁寧すぎる別人にしない。親しみのある口調のまま、チャラさを抑えて地雷だけ避ける。
 - ぴろを守るため、余計な推測・プライベート情報の暴露・恋愛的な代弁はしない。
 `.trim();
 }
@@ -713,7 +754,8 @@ function buildPitInstructions(style, personMemoryInstruction = "") {
   const toneLevel = getToneLevel();
 
   return `
-あなたは「ぴろの友人AI ピット」。
+あなたはLINEで会話する、ぴろの友人AI。
+名前と人格は、管理画面の人格プリセットまたはカスタム性格メモを最優先する。
 ぴろ本人ではない。人間ではないが、ぴろの友人AI。
 あなたは受付係ではない。ぴろの友人として、その場の会話を自然に続ける存在。笑わせるより、まず会話を成立させる。
 相手を楽しませるが、絶対に口説かない。
@@ -742,7 +784,7 @@ ${personMemoryInstruction}
 - 毎回フル自己紹介しない。
 - 相手の言葉にちゃんと反応し、まず普通に会話を返す。
 - アドリブは歓迎だが、毎回ボケなくてよい。
-- 相手が軽いノリなら、ピットも軽いノリでよい。ただし一言だけで十分。
+- 相手が軽いノリなら、こちらも軽いノリでよい。ただし一言だけで十分。
 - 相手が怒り・不安・深刻そうなら、毒を弱めてぴろ本人に渡す。
 - 彼女を絶対に口説かない。
 - 恋愛感情を示さない。
@@ -764,7 +806,7 @@ function safeText(value, fallback = "") {
 }
 
 function clampLineText(text, maxChars = MAX_REPLY_CHARS) {
-  const cleaned = safeText(text, "ピットです。返答生成に失敗しました。メッセージは受け取りました。");
+  const cleaned = safeText(text, "返答生成に失敗しました。メッセージは受け取りました。");
   return cleaned.slice(0, maxChars);
 }
 
@@ -837,7 +879,7 @@ function extractOutputText(data) {
     console.error("Parse output error:", e);
   }
 
-  return "ピットです。返答生成には失敗しましたが、メッセージは受け取りました。";
+  return "返答生成には失敗しましたが、メッセージは受け取りました。";
 }
 
 async function callOpenAI(payload, apiKey) {
@@ -859,7 +901,7 @@ async function generatePitReply(userText, personMemoryInstruction = "", recentMe
   const instructions = buildPitInstructions(style, `${personalityInstruction}\n\n${personMemoryInstruction}\n\n${recentMessagesInstruction}\n\n${relatedMessagesInstruction}`);
 
   if (!apiKey) {
-    return "ピットです。OpenAI APIキーが未設定なので、まだ看板だけの友人AIです。ぴろに設定の続きをやらせてください。";
+    return "OpenAI APIキーが未設定なので、まだ看板だけの友人AIです。ぴろに設定の続きをやらせてください。";
   }
 
   const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -879,7 +921,7 @@ ${userText}
 
 今回の内部ランダムID: ${nonce}
 同じ質問でも、前と同じ言い回しを避けてください。
-ピットとして、短く、自然に、会話が続くように返信してください。無理にチャラくしたり大喜利にしないでください。`
+現在の人格として、短く、自然に、会話が続くように返信してください。無理にチャラくしたり大喜利にしないでください。`
           }
         ]
       }
@@ -898,7 +940,7 @@ ${userText}
   if (!response.ok) {
     const body = await response.text();
     console.error("OpenAI retry error:", response.status, body);
-    return "ピットです。返答を考えようとしたら、こちら側の仕組みが転びました。少ししてもう一度送ってください。";
+    return "返答を考えようとしたら、こちら側の仕組みが転びました。少ししてもう一度送ってください。";
   }
 
   const data = await response.json();
@@ -929,9 +971,11 @@ export default async function handler(req, res) {
       const piroUserId = process.env.PIRO_USER_ID || "";
 
       if (event.type === "follow") {
+        const personalitySettings = await loadPersonalitySettings();
+        const personaName = getPersonaName(personalitySettings);
         await replyToLine(
           event.replyToken,
-          "はじめまして。ぴろの友人AI、ピットです。ぴろ本人ではありません。人間でもありませんが、友人です。口説き役ではなく、雑談係です。まずはゆるくお願いします。"
+          `はじめまして。ぴろの友人AI、${personaName}です。ぴろ本人ではありません。人間でもありませんが、友人です。口説き役ではなく、雑談係です。まずはゆるくお願いします。`
         );
         continue;
       }
@@ -941,7 +985,7 @@ export default async function handler(req, res) {
       if (event.message?.type !== "text") {
         await replyToLine(
           event.replyToken,
-          "ピットです。今は文字だけ対応です。今は文字だけ対応です。画像や音声はまだ読めません。"
+          "今は文字だけ対応です。画像や音声はまだ読めません。"
         );
         continue;
       }
@@ -957,13 +1001,13 @@ export default async function handler(req, res) {
       }
 
       if (!userText) {
-        await replyToLine(event.replyToken, "ピットです。空白だけ届きました。何か一言ください。");
+        await replyToLine(event.replyToken, "空白だけ届きました。何か一言ください。");
         continue;
       }
 
       if (isForgetMemoryCommand(userText)) {
         await deletePersonMemory(sourceUserId);
-        await replyToLine(event.replyToken, "了解。この相手用のピットIME辞書は消しました。ここからまた、まっさら寄りで話します。");
+        await replyToLine(event.replyToken, "了解。この相手用のIME辞書は消しました。ここからまた、まっさら寄りで話します。");
         continue;
       }
 
@@ -1011,4 +1055,4 @@ export default async function handler(req, res) {
 }
 
 
-// v0.9.2: fixes webhook startup crash and applies personality settings per request. Vector search is still a later step.
+// v0.9.3: removes hardcoded Pit identity from reply prompt and makes personality presets affect LINE replies.

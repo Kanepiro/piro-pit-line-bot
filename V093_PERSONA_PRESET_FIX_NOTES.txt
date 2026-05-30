@@ -1,0 +1,16 @@
+# v0.9.3 persona preset fix
+
+- Removed the hardcoded "あなたは、ぴろの友人AI ピット" identity from the LINE reply system prompt.
+- Changed reply generation instruction from "ピットとして" to "現在の人格として".
+- Added actual prompt behavior for the admin personality presets:
+  - pit_default
+  - haru
+  - host_pit
+  - butler_pit
+- Added a Haru preset guard: when preset is haru, the bot is instructed to use the name "はる" and not call itself Pit.
+- Follow message now uses the selected preset name.
+- Reduced Pit-name leakage in recent logs and memory-update wording by labeling assistant messages as "AI".
+
+Syntax check:
+- node --check api/webhook.js
+- node --check api/admin.js
