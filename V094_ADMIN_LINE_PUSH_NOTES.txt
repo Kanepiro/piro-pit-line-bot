@@ -1,0 +1,20 @@
+# v0.9.4-admin-line-push
+
+管理画面 `/api/admin` から、LINE Bot「はる」名義でメッセージを送信できるようにした版です。
+
+変更点:
+- 管理画面に「はるからLINE送信」カードを追加
+- コメント入力欄と「LINEへ送信」ボタンを追加
+- `/api/admin` のPOSTに `action: "send_line_message"` を追加
+- LINE Messaging APIのPush APIで `PIRO_USER_ID` 宛てに送信
+- Supabaseが設定済みの場合、送信内容を `line_messages` に `assistant` として保存
+- 稼働状態に `LINE_CHANNEL_ACCESS_TOKEN` と `PIRO_USER_ID` の設定有無を表示
+
+必要な環境変数:
+- LINE_CHANNEL_ACCESS_TOKEN
+- PIRO_USER_ID
+
+注意:
+- 送信先は現時点では `PIRO_USER_ID` 固定です。
+- 管理画面URLが第三者に知られると送信される危険があるため、URLは外に出さないでください。
+- 今回は最小差分のため、宛先選択やパスコード認証は追加していません。

@@ -189,3 +189,15 @@ Piro Pit Bot v0.6.0-supabase-privacy is alive. PIT_TONE_LEVEL=10. PIRO_USER_ID=s
 テスト例:
 「実は甘いものを食べると少し元気になるんだよね」
 → 数秒後〜次回以降に `person_memories` が更新される想定。
+
+## v0.9.4 管理画面からLINE送信
+
+追加内容:
+- `/api/admin` に「はるからLINE送信」欄を追加
+- 入力欄に書いた本文を、LINE Push APIで `PIRO_USER_ID` 宛てに送信
+- `LINE_CHANNEL_ACCESS_TOKEN` と `PIRO_USER_ID` の設定状態を管理画面に表示
+- Supabaseが設定済みなら、管理画面から送った本文も `line_messages` に `assistant` として保存
+
+注意:
+- 送信先は現時点では `PIRO_USER_ID` 固定です。
+- 管理画面URLが漏れると第三者が送信できてしまうため、URLは外に出さないでください。

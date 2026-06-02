@@ -1,4 +1,5 @@
-const PIT_VERSION = "v0.9.3-persona-preset-fix";
+const PIT_VERSION = "v0.9.4-admin-line-push";
+const LINE_PUSH_ENDPOINT = "https://api.line.me/v2/bot/message/push";
 
 function envStatus(value) {
   return value ? "設定済み" : "未設定";
@@ -8,6 +9,87 @@ function jsonResponse(res, status, payload) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
+}
+
+function safeText(value, fallback = "") {
+  if (typeof value !== "string") return fallback;
+  return value.trim();
+}
+
+function clampLineText(text, maxChars = 900) {
+  const cleaned = safeText(text);
+  return cleaned.slice(0, maxChars);
+}
+
+async function pushLineMessage(text) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const piroUserId = process.env.PIRO_USER_ID;
+  const cleanText = clampLineText(text);
+
+  if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKEN が未設定です");
+  if (!piroUserId) throw new Error("PIRO_USER_ID が未設定です。LINEで /myid を送って取得した userId をVercelへ設定してください");
+  if (!cleanText) throw new Error("送信する本文が空です");
+
+  const response = await fetch(LINE_PUSH_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      to: piroUserId,
+      messages: [{ type: "text", text: cleanText }]
+    })
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`LINE送信に失敗しました: ${response.status} ${body}`);
+  }
+
+  return cleanText;
+}
+
+async function saveOutgoingLineMessage(text) {
+  const piroUserId = process.env.PIRO_USER_ID;
+  if (!piroUserId || !getSupabaseConfig()) return false;
+
+  await supabaseFetch("/line_users?on_conflict=line_user_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify([{
+      line_user_id: piroUserId,
+      display_name: "ぴろ",
+      last_seen_at: new Date().toISOString()
+    }])
+  });
+
+  await supabaseFetch("/line_messages", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify([{
+      line_user_id: piroUserId,
+      role: "assistant",
+      content: clampLineText(text, 6000)
+    }])
+  });
+
+  return true;
+}
+
+async function sendAdminLineMessage(text) {
+  const sentText = await pushLineMessage(text);
+  let savedToSupabase = false;
+  let saveWarning = null;
+
+  try {
+    savedToSupabase = await saveOutgoingLineMessage(sentText);
+  } catch (error) {
+    console.error("Admin sent message save error:", error);
+    saveWarning = error?.message || "Supabase保存に失敗しました";
+  }
+
+  return { sentText, savedToSupabase, saveWarning };
 }
 
 function getSupabaseConfig() {
@@ -305,7 +387,7 @@ function htmlPage(settings, source) {
     <header>
       <div>
         <h1>ぴろの友人AI ピット 管理画面</h1>
-        <div class="subtitle">性格設定をSupabaseに保存できます。v0.9.3では人格プリセットもLINE会話に反映されます。</div>
+        <div class="subtitle">性格設定の保存と、管理画面からのLINE送信ができます。</div>
       </div>
       <div class="version">${PIT_VERSION}</div>
     </header>
@@ -323,6 +405,10 @@ function htmlPage(settings, source) {
             <dd>${envStatus(process.env.SUPABASE_URL)}</dd>
             <dt>Service Role Key</dt>
             <dd>${envStatus(process.env.SUPABASE_SERVICE_ROLE_KEY)}</dd>
+            <dt>LINE Access Token</dt>
+            <dd>${envStatus(process.env.LINE_CHANNEL_ACCESS_TOKEN)}</dd>
+            <dt>Push送信先 PIRO_USER_ID</dt>
+            <dd>${envStatus(process.env.PIRO_USER_ID)}</dd>
             <dt>Memory Update</dt>
             <dd>${memoryUpdateEnabled ? "有効" : "無効"}</dd>
             <dt>Settings Source</dt>
@@ -395,6 +481,18 @@ function htmlPage(settings, source) {
             秘密鍵の中身は表示しません。この画面で保存した設定はSupabaseに入り、LINEボットの返答にも反映されます。
           </p>
         </div>
+
+        <div class="card full">
+          <h2>はるからLINE送信</h2>
+          <textarea id="linePushText" maxlength="900" placeholder="ここに送信したい本文を入力"></textarea>
+          <div class="actions">
+            <button type="button" id="sendLineButton">LINEへ送信</button>
+            <button type="button" class="secondary" id="clearLineButton">入力欄を空にする</button>
+          </div>
+          <p class="note">
+            送信先はVercel環境変数 <code>PIRO_USER_ID</code> に設定されたLINEユーザーです。送信した本文は、そのままLINEに届きます。Supabaseが設定済みなら会話ログにも assistant として保存します。管理画面URLが他人に見えると勝手に送信されるので、URLは外に出さないでください。
+          </p>
+        </div>
       </section>
     </form>
   </main>
@@ -450,6 +548,35 @@ function htmlPage(settings, source) {
         showMessage(error.message || "保存に失敗しました", true);
       }
     });
+
+    document.getElementById("sendLineButton").addEventListener("click", async () => {
+      const textarea = document.getElementById("linePushText");
+      const text = textarea.value.trim();
+
+      if (!text) {
+        showMessage("送信する本文を入力してください。", true);
+        return;
+      }
+
+      try {
+        showMessage("LINEへ送信中...");
+        const res = await fetch("/api/admin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "send_line_message", text })
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) throw new Error(json.error || "LINE送信に失敗しました");
+        textarea.value = "";
+        showMessage(json.saveWarning ? "LINEへ送信しました。ただし会話ログ保存は失敗しました: " + json.saveWarning : "LINEへ送信しました。");
+      } catch (error) {
+        showMessage(error.message || "LINE送信に失敗しました", true);
+      }
+    });
+
+    document.getElementById("clearLineButton").addEventListener("click", () => {
+      document.getElementById("linePushText").value = "";
+    });
   </script>
 </body>
 </html>`;
@@ -462,6 +589,18 @@ export default async function handler(req, res) {
       if (typeof body === "string") {
         body = JSON.parse(body || "{}");
       }
+
+      if (body?.action === "send_line_message") {
+        const result = await sendAdminLineMessage(body.text || "");
+        return jsonResponse(res, 200, {
+          ok: true,
+          sent: true,
+          chars: result.sentText.length,
+          savedToSupabase: result.savedToSupabase,
+          saveWarning: result.saveWarning
+        });
+      }
+
       const saved = await saveSettings(body || {});
       return jsonResponse(res, 200, { ok: true, settings: saved });
     }
