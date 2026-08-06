@@ -115,7 +115,7 @@ export default async function handler(req, res) {
   for (const event of events) {
     try {
       if (event.type === "follow") {
-        await replyToLine(event.replyToken, "どうも、ピット。適当に話しかけて。短く返すよ。?");
+        await replyToLine(event.replyToken, "どうも、ピット。適当に話しかけて。短く返すよ。");
         continue;
       }
 
@@ -128,7 +128,7 @@ export default async function handler(req, res) {
 
       const userText = safeText(event.message.text);
       if (!userText) {
-        await replyToLine(event.replyToken, "何か文字を送って。?");
+        await replyToLine(event.replyToken, "何か文字を送って。");
         continue;
       }
 
