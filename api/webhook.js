@@ -1,11 +1,12 @@
 // api/webhook.js
-// もちロボちゃん LINE Bot v1.1.0 CHEAP REPLY MODE
-// 目的: Supabase・記憶・長い人格設定を使わず、最小コストでもちロボちゃんとして短文返信する。
+// もちロボちゃん LINE Bot v1.2.0 CHEAP REPLY + COUNTER
+// 目的: 最小コスト短文返信を維持しつつ、会話本文やユーザーIDを保存せず受信数だけ記録する。
 
 const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
+const SUPABASE_RPC_ENDPOINT = "/rest/v1/rpc/increment_mochirobo_message_counters";
 
-const PIT_VERSION = "v1.1.0-mochirobo-cheap-reply";
+const PIT_VERSION = "v1.2.0-mochirobo-cheap-counter";
 const DEFAULT_MODEL = "gpt-5-nano";
 const MAX_INPUT_CHARS = 300;
 const MAX_REPLY_CHARS = 120;
@@ -20,6 +21,35 @@ function safeText(value, fallback = "") {
 
 function clampText(value, maxChars) {
   return safeText(value).slice(0, maxChars);
+}
+
+function hasCounterStorage() {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+async function incrementMessageCounter() {
+  if (!hasCounterStorage()) return;
+
+  const baseUrl = process.env.SUPABASE_URL.replace(/\/$/, "");
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  try {
+    const response = await fetch(`${baseUrl}${SUPABASE_RPC_ENDPOINT}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: key,
+        Authorization: `Bearer ${key}`
+      },
+      body: "{}"
+    });
+
+    if (!response.ok) {
+      console.error("Counter increment failed:", response.status, await response.text());
+    }
+  } catch (error) {
+    console.error("Counter increment error:", error);
+  }
 }
 
 function extractOutputText(data) {
@@ -104,7 +134,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const model = process.env.OPENAI_MODEL || DEFAULT_MODEL;
     return res.status(200).send(
-      `MochiRobo LINE Bot ${PIT_VERSION} is alive. MODEL=${model}. MEMORY=off. SUPABASE=unused. MAX_INPUT_CHARS=${MAX_INPUT_CHARS}. MAX_REPLY_CHARS=${MAX_REPLY_CHARS}.`
+      `MochiRobo LINE Bot ${PIT_VERSION} is alive. MODEL=${model}. MEMORY=off. COUNTER=${hasCounterStorage() ? "on" : "off"}. MAX_INPUT_CHARS=${MAX_INPUT_CHARS}. MAX_REPLY_CHARS=${MAX_REPLY_CHARS}.`
     );
   }
 
@@ -139,6 +169,8 @@ export default async function handler(req, res) {
         await replyToLine(event.replyToken, `LINE userId:\n${userId}`);
         continue;
       }
+
+      await incrementMessageCounter();
 
       const reply = await generateShortReply(userText);
       await replyToLine(event.replyToken, reply);
