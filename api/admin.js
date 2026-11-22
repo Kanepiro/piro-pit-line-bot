@@ -1,4 +1,4 @@
-const PIT_VERSION = "v1.2.0-mochirobo-cheap-counter";
+const PIT_VERSION = "v1.3.0-mochirobo-counter-v2";
 const DEFAULT_MODEL = "gpt-5-nano";
 
 function envStatus(value) {
@@ -29,7 +29,11 @@ function jstKeys() {
 }
 
 function hasCounterStorage() {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(
+    process.env.SUPABASE_URL &&
+    process.env.SUPABASE_PUBLISHABLE_KEY &&
+    process.env.MOCHIROBO_COUNTER_TOKEN
+  );
 }
 
 async function loadCounters() {
@@ -39,19 +43,19 @@ async function loadCounters() {
 
   const { dayKey, monthKey } = jstKeys();
   const baseUrl = process.env.SUPABASE_URL.replace(/\/$/, "");
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const wanted = [dayKey, monthKey, "total"];
-  const filter = wanted.map((v) => `\"${v}\"`).join(",");
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
 
   try {
     const response = await fetch(
-      `${baseUrl}/rest/v1/bot_message_counters?select=counter_key,message_count&counter_key=in.(${encodeURIComponent(filter)})`,
+      `${baseUrl}/rest/v1/rpc/get_mochirobo_message_counters`,
       {
+        method: "POST",
         headers: {
+          "Content-Type": "application/json",
           apikey: key,
-          Authorization: `Bearer ${key}`,
           Accept: "application/json"
-        }
+        },
+        body: JSON.stringify({ p_token: process.env.MOCHIROBO_COUNTER_TOKEN })
       }
     );
 
@@ -123,9 +127,9 @@ export default async function handler(req, res) {
     <div class="counts">
       <div class="count"><div class="n">${counters.today ?? "—"}</div><div class="t">今日</div></div>
       <div class="count"><div class="n">${counters.month ?? "—"}</div><div class="t">今月</div></div>
-      <div class="count"><div class="n">${counters.total ?? "—"}</div><div class="t">累計</div></div>
+      <div class="count"><div class="n">${counters.total ?? "—"}</div><div class="t">新環境累計</div></div>
     </div>
-    <p class="sub">日本時間基準。通常のテキストメッセージだけを1通=1回として数えます。</p>
+    <p class="sub">日本時間基準。通常のテキストメッセージだけを1通=1回として数えます。旧Supabaseの過去件数は未移行のため、表示は新環境で記録できた件数です。</p>
   </section>
 
   <section class="card">

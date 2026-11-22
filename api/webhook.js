@@ -6,7 +6,7 @@ const LINE_REPLY_ENDPOINT = "https://api.line.me/v2/bot/message/reply";
 const OPENAI_RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
 const SUPABASE_RPC_ENDPOINT = "/rest/v1/rpc/increment_mochirobo_message_counters";
 
-const PIT_VERSION = "v1.2.0-mochirobo-cheap-counter";
+const PIT_VERSION = "v1.3.0-mochirobo-counter-v2";
 const DEFAULT_MODEL = "gpt-5-nano";
 const MAX_INPUT_CHARS = 300;
 const MAX_REPLY_CHARS = 120;
@@ -24,24 +24,27 @@ function clampText(value, maxChars) {
 }
 
 function hasCounterStorage() {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(
+    process.env.SUPABASE_URL &&
+    process.env.SUPABASE_PUBLISHABLE_KEY &&
+    process.env.MOCHIROBO_COUNTER_TOKEN
+  );
 }
 
 async function incrementMessageCounter() {
   if (!hasCounterStorage()) return;
 
   const baseUrl = process.env.SUPABASE_URL.replace(/\/$/, "");
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
 
   try {
     const response = await fetch(`${baseUrl}${SUPABASE_RPC_ENDPOINT}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: key,
-        Authorization: `Bearer ${key}`
+        apikey: key
       },
-      body: "{}"
+      body: JSON.stringify({ p_token: process.env.MOCHIROBO_COUNTER_TOKEN })
     });
 
     if (!response.ok) {
